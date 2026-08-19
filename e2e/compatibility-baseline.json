@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "capturedAt": "2026-08-19",
+  "purpose": "Upstream compatibility baseline for Triple Crown v0.6",
+  "upstreams": {
+    "gsd": {
+      "repository": "open-gsd/gsd-core",
+      "branch": "next",
+      "observedCommit": "1adf6d2245ae55d6f93f0d1d1ed7812d25d8b194",
+      "version": "1.10.0",
+      "node": ">=24.0.0",
+      "npm": ">=10.0.0",
+      "requiredContracts": [
+        "gsd capability install <local> --scope project --yes",
+        "gsd capability list emits JSON",
+        "gsd loop render-hooks <point> --raw emits {point,activeHooks,rendered}",
+        "execute:post dispatches generic capability steps",
+        "verify:pre dispatches gates",
+        "ship:pre enforces generic third-party gates",
+        "ship:post dispatches step refs best-effort"
+      ]
+    },
+    "gstack": {
+      "repository": "garrytan/gstack",
+      "branch": "main",
+      "observedCommit": "60e51342b54553cf4347ce7a786cae508125053e",
+      "version": "1.67.2.0",
+      "requiredSkills": [
+        "plan-eng-review",
+        "review",
+        "qa-only",
+        "cso",
+        "canary",
+        "document-release",
+        "retro"
+      ],
+      "requiredContracts": {
+        "qa-only": "report-only; must not fix source",
+        "canary": "requires a live URL; supports --quick and duration",
+        "document-release": "may edit docs, commit, push and update PR body",
+        "retro": "time-window retrospective, default conceptually weekly"
+      }
+    },
+    "superpowers": {
+      "repository": "obra/superpowers",
+      "branch": "main",
+      "observedCommit": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "version": "6.3.0",
+      "requiredSkills": [
+        "using-superpowers",
+        "test-driven-development",
+        "systematic-debugging",
+        "verification-before-completion"
+      ],
+      "integrationPolicy": "GSD owns lifecycle; Triple Crown invokes only selected engineering disciplines inside executors."
+    }
+  },
+  "tripleCrownVersion": "0.6.3",
+  "workflowGuide": {
+    "command": "/gsd-triple-crown",
+    "policy": "read-only; never advances lifecycle automatically",
+    "checkpointCount": 10,
+    "gsdProgressDelegation": "/gsd-progress remains authoritative for GSD-native phase routing"
+  },
+  "installer": {
+    "npx": "triple-crown-workflow-installer",
+    "bash": "install.sh",
+    "stableProjectSource": ".triple-crown/",
+    "superpowersInstall": "manual Claude plugin command; warning by default, strict mode blocks"
+  }
+}

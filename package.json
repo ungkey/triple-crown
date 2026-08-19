@@ -1,0 +1,49 @@
+{
+  "name": "triple-crown-workflow-installer",
+  "version": "0.6.4",
+  "description": "Installer for the Triple Crown GSD + gstack + Superpowers workflow integration.",
+  "bin": {
+    "triple-crown-workflow-installer": "bin/triple-crown.cjs",
+    "triple-crown": "bin/triple-crown.cjs",
+    "triple-crown-install": "bin/triple-crown.cjs"
+  },
+  "files": [
+    "bin",
+    "capabilities",
+    "guards",
+    "scripts",
+    "claude-hooks",
+    "docs/WORKFLOW-GUIDE.md",
+    "docs/INSTALLER.md",
+    "CLAUDE-routing-fragment.md",
+    "WORKFLOW-QUICK-REFERENCE.md",
+    "VERSION",
+    "install.sh",
+    "install.ps1"
+  ],
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "keywords": [
+    "gsd",
+    "gstack",
+    "superpowers",
+    "claude-code",
+    "agent-harness",
+    "workflow",
+    "installer"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/REPLACE_WITH_OWNER/triple-crown-workflow.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test": "python tests/run_installer_smoke.py && python tests/run_v061_l0.py",
+    "pack:check": "npm pack --dry-run"
+  }
+}

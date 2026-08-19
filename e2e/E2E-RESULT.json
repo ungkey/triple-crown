@@ -1,0 +1,189 @@
+{
+  "schema": 1,
+  "mode": "mock",
+  "startedAt": "2026-08-19T13:56:15.939Z",
+  "stages": [
+    {
+      "stage": "doctor",
+      "status": "PASS",
+      "report": {
+        "schema": 1,
+        "mode": "mock",
+        "generatedAt": "2026-08-19T13:56:16.087Z",
+        "host": {
+          "platform": "linux",
+          "arch": "x64",
+          "cwd": "/home/devkey/works/triple-crown-v0.6.3-installer"
+        },
+        "checks": [
+          {
+            "id": "node",
+            "status": "PASS",
+            "message": "Node 24.18.0",
+            "observed": "24.18.0",
+            "required": ">=24.0.0",
+            "source": "GSD 1.10 package engines"
+          },
+          {
+            "id": "npm",
+            "status": "PASS",
+            "message": "npm 11.16.0",
+            "observed": "11.16.0",
+            "required": ">=10.0.0"
+          },
+          {
+            "id": "git",
+            "status": "PASS",
+            "message": "git: git version 2.43.0",
+            "path": "/usr/bin/git"
+          },
+          {
+            "id": "claude",
+            "status": "PASS",
+            "message": "Claude Code found: /home/devkey/.local/bin/claude",
+            "path": "/home/devkey/.local/bin/claude"
+          },
+          {
+            "id": "gh",
+            "status": "PASS",
+            "message": "GitHub CLI found: /usr/bin/gh",
+            "path": "/usr/bin/gh"
+          },
+          {
+            "id": "bun",
+            "status": "PASS",
+            "message": "Bun found: 1.3.14",
+            "path": "/home/devkey/.bun/bin/bun",
+            "requiredFor": "gstack install/setup"
+          },
+          {
+            "id": "gsd",
+            "status": "PASS",
+            "message": "GSD: 1.10.0-mock",
+            "path": "/home/devkey/works/triple-crown-v0.6.3-installer/e2e/mock-gsd.cjs",
+            "observed": "1.10.0-mock",
+            "required": ">=1.10.0 <2.0.0"
+          },
+          {
+            "id": "gstack",
+            "status": "PASS",
+            "message": "gstack 1.62.0.0; required skills present",
+            "root": "/home/devkey/.claude/skills/gstack",
+            "version": "1.62.0.0",
+            "missingSkills": []
+          },
+          {
+            "id": "superpowers",
+            "status": "WARN",
+            "message": "Superpowers installation not found (set TRIPLE_SUPERPOWERS_HOME to its skills directory)"
+          }
+        ],
+        "summary": {
+          "pass": 8,
+          "warn": 1,
+          "fail": 0,
+          "ready": true
+        }
+      }
+    },
+    {
+      "stage": "gsd-init",
+      "status": "PASS",
+      "stdout": "{\"status\":\"initialized\",\"mock\":true}"
+    },
+    {
+      "stage": "install-triple-superpowers",
+      "status": "PASS",
+      "stdout": "{\n  \"status\": \"installed\",\n  \"id\": \"triple-superpowers\",\n  \"version\": \"0.6.4\",\n  \"scope\": \"project\",\n  \"disclosure\": [\n    \"mock install — no trust semantics exercised\"\n  ]\n}"
+    },
+    {
+      "stage": "install-triple-gstack",
+      "status": "PASS",
+      "stdout": "{\n  \"status\": \"installed\",\n  \"id\": \"triple-gstack\",\n  \"version\": \"0.6.4\",\n  \"scope\": \"project\",\n  \"disclosure\": [\n    \"mock install — no trust semantics exercised\"\n  ]\n}"
+    },
+    {
+      "stage": "install-triple-crown-guide",
+      "status": "PASS",
+      "stdout": "{\n  \"status\": \"installed\",\n  \"id\": \"triple-crown-guide\",\n  \"version\": \"0.6.4\",\n  \"scope\": \"project\",\n  \"disclosure\": [\n    \"mock install — no trust semantics exercised\"\n  ]\n}"
+    },
+    {
+      "stage": "capability-list",
+      "status": "PASS",
+      "capabilities": [
+        {
+          "id": "triple-superpowers",
+          "role": "feature",
+          "version": "0.6.4",
+          "tier": "full",
+          "source": "./capabilities/triple-superpowers",
+          "scope": "project",
+          "status": "active",
+          "reason": null,
+          "title": "Triple Crown Superpowers Executor Policy"
+        },
+        {
+          "id": "triple-gstack",
+          "role": "feature",
+          "version": "0.6.4",
+          "tier": "full",
+          "source": "./capabilities/triple-gstack",
+          "scope": "project",
+          "status": "active",
+          "reason": null,
+          "title": "Triple Crown gstack Quality, Security & Release Bridge"
+        },
+        {
+          "id": "triple-crown-guide",
+          "role": "feature",
+          "version": "0.6.4",
+          "tier": "standard",
+          "source": "./capabilities/triple-crown-guide",
+          "scope": "project",
+          "status": "active",
+          "reason": null,
+          "title": "Triple Crown Workflow Guide"
+        }
+      ]
+    },
+    {
+      "stage": "staging",
+      "status": "PASS"
+    },
+    {
+      "stage": "workflow-guide",
+      "status": "PASS",
+      "currentStage": "plan",
+      "blocker": {
+        "stage": "plan",
+        "detail": "PLAN exists, but the exact plan set has not been marked as reviewed."
+      },
+      "next": {
+        "kind": "checkpoint",
+        "command": "/plan-eng-review",
+        "reason": "The exact GSD PLAN set must pass interactive gstack plan review before execution.",
+        "after": [
+          "node .gsd/capabilities/triple-gstack/checks/mark-plan-reviewed.cjs \"/tmp/triple-crown-v06-live-1M4m17/.planning/phases/01-auth\" --status pass",
+          "/gsd-progress --next"
+        ]
+      }
+    },
+    {
+      "stage": "hook-contract",
+      "status": "PASS",
+      "stdout": "PASS hook contract: plan -> execute -> verify -> ship surfaces"
+    },
+    {
+      "stage": "ship-guard-install",
+      "status": "PASS",
+      "stdout": "Installed Triple Crown ship guard: /tmp/triple-crown-v06-live-1M4m17/.claude/hooks/triple-crown-ship-guard.cjs\nUpdated Claude Code project settings: /tmp/triple-crown-v06-live-1M4m17/.claude/settings.json"
+    },
+    {
+      "stage": "adapter-contracts",
+      "status": "PASS",
+      "stdout": "PASS guard-installer-idempotent\nPASS gsd-ship-authorization/session/action-limits\nPASS docs-only-push-allowlist\nPASS release/deployment-sha-binding\nPASS canary-matching-deployment\nPASS document-release-post-mutation-check\nPASS v0.6 inherited release-contract smoke"
+    }
+  ],
+  "fixture": "/tmp/triple-crown-v06-live-1M4m17",
+  "status": "PASS",
+  "finishedAt": "2026-08-19T13:56:17.771Z"
+}

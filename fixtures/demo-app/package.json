@@ -1,0 +1,9 @@
+{
+  "name": "triple-crown-e2e-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node test.mjs"
+  }
+}

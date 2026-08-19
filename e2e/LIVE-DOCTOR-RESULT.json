@@ -1,0 +1,76 @@
+{
+  "schema": 1,
+  "mode": "live",
+  "generatedAt": "2026-08-19T09:32:54.476Z",
+  "host": {
+    "platform": "linux",
+    "arch": "x64",
+    "cwd": "/mnt/data/triple-crown-v0.6-e2e-harness"
+  },
+  "checks": [
+    {
+      "id": "node",
+      "status": "FAIL",
+      "message": "Node 22.16.0",
+      "observed": "22.16.0",
+      "required": ">=24.0.0",
+      "source": "GSD 1.10 package engines"
+    },
+    {
+      "id": "npm",
+      "status": "PASS",
+      "message": "npm 10.9.2",
+      "observed": "10.9.2",
+      "required": ">=10.0.0"
+    },
+    {
+      "id": "git",
+      "status": "PASS",
+      "message": "git: git version 2.47.3",
+      "path": "/usr/bin/git"
+    },
+    {
+      "id": "claude",
+      "status": "WARN",
+      "message": "Claude Code CLI not found in PATH; interactive L2 acceptance unavailable",
+      "path": null
+    },
+    {
+      "id": "gh",
+      "status": "WARN",
+      "message": "gh not found; real GSD ship/PR acceptance unavailable",
+      "path": null
+    },
+    {
+      "id": "bun",
+      "status": "WARN",
+      "message": "Bun not found; current gstack setup requires Bun >=1.0",
+      "path": null,
+      "requiredFor": "gstack install/setup"
+    },
+    {
+      "id": "gsd",
+      "status": "FAIL",
+      "message": "gsd command not found",
+      "path": null,
+      "observed": null,
+      "required": ">=1.10.0 <2.0.0"
+    },
+    {
+      "id": "gstack",
+      "status": "FAIL",
+      "message": "gstack installation not found (set TRIPLE_GSTACK_HOME if installed elsewhere)"
+    },
+    {
+      "id": "superpowers",
+      "status": "FAIL",
+      "message": "Superpowers installation not found (set TRIPLE_SUPERPOWERS_HOME to its skills directory)"
+    }
+  ],
+  "summary": {
+    "pass": 2,
+    "warn": 3,
+    "fail": 4,
+    "ready": false
+  }
+}

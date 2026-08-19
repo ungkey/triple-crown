@@ -1,0 +1,50 @@
+# ── Node / npm ────────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.npm/
+# `npm pack` output — releases are published, not committed.
+*.tgz
+
+# ── Triple Crown install output ───────────────────────────────────────────────
+# Written into a TARGET project by `triple-crown install`. If this repository is
+# ever used as its own install target these must not be committed.
+.triple-crown/
+.triple-crown.tmp-*/
+.triple-crown.backup-*/
+
+# ── GSD project state ─────────────────────────────────────────────────────────
+.gsd/
+.gsd-capabilities.json
+.fake-gsd-capabilities.json
+.planning/
+
+# ── Claude Code local state ───────────────────────────────────────────────────
+# `.claude/settings.json` is shared configuration and may be committed on purpose;
+# everything below is per-machine or installer-generated.
+.claude/settings.local.json
+.claude/hooks/triple-crown-ship-guard.cjs
+.claude/skills/gsd-triple-*/
+.claude/.gsd-*
+
+# ── Test / scratch output ─────────────────────────────────────────────────────
+tc-installer-*/
+tmp/
+*.tmp
+coverage/
+__pycache__/
+*.py[cod]
+
+# ── Editor / OS ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# ── Secrets ───────────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
