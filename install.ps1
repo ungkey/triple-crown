@@ -20,12 +20,15 @@ if (-not (Get-Command npx -ErrorAction SilentlyContinue)) {
 }
 
 $ref = if ($env:TRIPLE_CROWN_REF) { $env:TRIPLE_CROWN_REF } else { "main" }
-if ($env:TRIPLE_CROWN_REPO) {
-  & npx --yes "github:$($env:TRIPLE_CROWN_REPO)#$ref" install @RemainingArgs
+
+# An explicitly configured npm package wins; otherwise GitHub is the distribution
+# channel, so the default path needs no environment variables at all.
+if ($env:TRIPLE_CROWN_NPM_PACKAGE) {
+  $ver = if ($env:TRIPLE_CROWN_VERSION) { $env:TRIPLE_CROWN_VERSION } else { "latest" }
+  & npx --yes "$($env:TRIPLE_CROWN_NPM_PACKAGE)@$ver" install @RemainingArgs
   exit $LASTEXITCODE
 }
 
-$pkg = if ($env:TRIPLE_CROWN_NPM_PACKAGE) { $env:TRIPLE_CROWN_NPM_PACKAGE } else { "triple-crown-workflow-installer" }
-$ver = if ($env:TRIPLE_CROWN_VERSION) { $env:TRIPLE_CROWN_VERSION } else { "latest" }
-& npx --yes "$pkg@$ver" install @RemainingArgs
+$repo = if ($env:TRIPLE_CROWN_REPO) { $env:TRIPLE_CROWN_REPO } else { "ungkey/triple-crown" }
+& npx --yes "github:$repo#$ref" install @RemainingArgs
 exit $LASTEXITCODE

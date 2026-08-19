@@ -37,7 +37,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/REPLACE_WITH_OWNER/triple-crown-workflow.git"
+    "url": "git+https://github.com/ungkey/triple-crown.git"
   },
   "publishConfig": {
     "access": "public"

@@ -7,13 +7,13 @@ umask 077
 # Local checkout / extracted release:
 #   bash install.sh --yes
 #
-# Once this project is published on npm:
-#   curl -fsSL <RAW_INSTALL_SH_URL> | bash -s -- --yes
+# Remote, from the target project:
+#   curl -fsSL https://raw.githubusercontent.com/ungkey/triple-crown/main/install.sh | bash -s -- --yes
 #
 # Remote resolution order:
 #   1. adjacent package checkout
-#   2. TRIPLE_CROWN_REPO=owner/repo (npx github:owner/repo#ref)
-#   3. npm package (default: triple-crown-workflow-installer)
+#   2. TRIPLE_CROWN_NPM_PACKAGE=<name> (npx <name>@<version>) when set explicitly
+#   3. GitHub repository (default: ungkey/triple-crown), pinned with TRIPLE_CROWN_REF
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd -P || true)"
 
@@ -33,10 +33,11 @@ fi
 
 REF="${TRIPLE_CROWN_REF:-main}"
 
-if [ -n "${TRIPLE_CROWN_REPO:-}" ]; then
-  exec npx --yes "github:${TRIPLE_CROWN_REPO}#${REF}" install "$@"
+# An explicitly configured npm package wins; otherwise GitHub is the distribution
+# channel, so the default path needs no environment variables at all.
+if [ -n "${TRIPLE_CROWN_NPM_PACKAGE:-}" ]; then
+  exec npx --yes "${TRIPLE_CROWN_NPM_PACKAGE}@${TRIPLE_CROWN_VERSION:-latest}" install "$@"
 fi
 
-PACKAGE="${TRIPLE_CROWN_NPM_PACKAGE:-triple-crown-workflow-installer}"
-VERSION="${TRIPLE_CROWN_VERSION:-latest}"
-exec npx --yes "${PACKAGE}@${VERSION}" install "$@"
+REPO="${TRIPLE_CROWN_REPO:-ungkey/triple-crown}"
+exec npx --yes "github:${REPO}#${REF}" install "$@"

@@ -1,28 +1,93 @@
 # Triple Crown v0.6.4 — One-command Installer + Workflow Guide
 
-## Install first
+## Install
 
-The normal installation path is now **one command**.
+Repository: <https://github.com/ungkey/triple-crown>
 
-### Immediate — from the downloadable `.tgz`
+### Requirements
+
+```text
+Node   >= 24   (current GSD 1.10 requirement)
+git
+Claude Code
+```
+
+GSD and gstack are bootstrapped automatically when missing. gstack setup
+additionally needs [Bun](https://bun.sh). Superpowers is installed separately
+from inside Claude Code:
+
+```text
+/plugin install superpowers@claude-plugins-official
+```
+
+### Install into a project — one command
+
+Run this **from the project you want Triple Crown to manage** (the installer
+targets the current git root):
 
 ```bash
+npx --yes github:ungkey/triple-crown install --yes
+```
+
+Pin a released tag instead of `main`:
+
+```bash
+npx --yes github:ungkey/triple-crown#v0.6.4 install --yes
+```
+
+Target a different directory without changing shell:
+
+```bash
+npx --yes github:ungkey/triple-crown install --yes --project /path/to/your/project
+```
+
+If your npx version cannot infer the binary from the repository name, name the
+package and the binary explicitly:
+
+```bash
+npx --yes --package github:ungkey/triple-crown triple-crown install --yes
+```
+
+### Install from a clone
+
+```bash
+git clone https://github.com/ungkey/triple-crown.git
+cd /path/to/your/project
+bash /path/to/triple-crown/install.sh --yes
+```
+
+`install.sh` runs the adjacent checkout directly, so no network fetch happens in
+this form.
+
+### Install via the bootstrap script
+
+macOS / Linux — run from the target project:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ungkey/triple-crown/main/install.sh | bash -s -- --yes
+```
+
+Windows PowerShell — run from the target project:
+
+```powershell
+irm https://raw.githubusercontent.com/ungkey/triple-crown/main/install.ps1 -OutFile install.ps1
+.\install.ps1 --yes
+```
+
+Both default to `ungkey/triple-crown` and honour `TRIPLE_CROWN_REF` to select a
+branch or tag (default `main`), `TRIPLE_CROWN_REPO` to point at a fork, and
+`TRIPLE_CROWN_NPM_PACKAGE` to use an npm registry package instead.
+
+### Install from a packed tarball
+
+```bash
+npm pack                     # in a clone -> triple-crown-workflow-installer-0.6.4.tgz
 npx --yes --package ./triple-crown-workflow-installer-0.6.4.tgz triple-crown install --yes
 ```
 
-### After npm publish
+The npm registry package is not published; GitHub is the distribution channel.
 
-```bash
-npx --yes triple-crown-workflow-installer@latest install --yes
-```
-
-### From an extracted release
-
-```bash
-bash install.sh --yes
-```
-
-The installer handles:
+### What the installer does
 
 ```text
 GSD/gstack prerequisite detection/bootstrap
@@ -36,32 +101,38 @@ GSD/gstack prerequisite detection/bootstrap
 → activation verification
 ```
 
-Skills are installed into the **target project's** `.claude/skills/` directory, so
-Claude Code sees them the moment the project is opened and no other repository on
-the machine is affected. Verify with:
+Capabilities are installed **project-scoped**, so their gates never fire in other
+repositories. Skills are copied into the target project's own `.claude/skills/`
+directory, which is what makes them visible to Claude Code — a GSD capability
+install alone never reaches a skills root. See `docs/V0.6.4-HOTFIX.md`.
+
+### Verify
 
 ```bash
-npx triple-crown-workflow-installer doctor
+npx --yes github:ungkey/triple-crown doctor
 ```
 
-`skills-installed` must be `PASS`.
-
-Superpowers is checked separately because its official Claude Code install is the
-Claude plugin command:
-
-```text
-/plugin install superpowers@claude-plugins-official
-```
-
-Full installer documentation: `docs/INSTALLER.md`.
-
-After installation:
+`skills-installed` must be `PASS`. Then start a new Claude Code session in the
+project and run:
 
 ```text
 /gsd-triple-crown
 ```
 
-shows current workflow position and next action.
+It shows the current workflow position and the next action.
+
+### Update / uninstall
+
+```bash
+npx --yes github:ungkey/triple-crown install --yes      # re-run to update in place
+npx --yes github:ungkey/triple-crown uninstall --yes
+```
+
+Uninstall removes only Triple Crown's own capability registrations, `.triple-crown/`,
+its marked skills, its `CLAUDE.md` block, and its ship-guard hook. GSD, gstack,
+and Superpowers are left installed.
+
+Full installer documentation: `docs/INSTALLER.md`.
 
 ---
 

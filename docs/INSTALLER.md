@@ -84,23 +84,37 @@ With preinstalled dependencies only:
 bash install.sh --yes --no-bootstrap
 ```
 
-Once the repository is hosted, `install.sh` can also be used through a raw GitHub
-URL. It falls back to the configured npm package, or you can explicitly force a
-GitHub repository:
+## Remote install
+
+The canonical repository is <https://github.com/ungkey/triple-crown>. The shortest
+remote form needs no bootstrap script at all — run it from the target project:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OWNER/REPO/main/install.sh \
-  | TRIPLE_CROWN_REPO=OWNER/REPO bash -s -- --yes
+npx --yes github:ungkey/triple-crown install --yes
 ```
 
-`TRIPLE_CROWN_REF` can pin a tag or branch:
+`install.sh` can also be piped from raw GitHub:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OWNER/REPO/v0.6.4/install.sh \
-  | TRIPLE_CROWN_REPO=OWNER/REPO \
-    TRIPLE_CROWN_REF=v0.6.4 \
-    bash -s -- --yes
+curl -fsSL https://raw.githubusercontent.com/ungkey/triple-crown/main/install.sh | bash -s -- --yes
 ```
+
+`ungkey/triple-crown` is the built-in default; `TRIPLE_CROWN_REPO` only needs to
+be set to install from a fork. `TRIPLE_CROWN_REF` pins a tag or branch:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ungkey/triple-crown/v0.6.4/install.sh \
+  | TRIPLE_CROWN_REF=v0.6.4 bash -s -- --yes
+```
+
+Windows PowerShell uses the same environment variables:
+
+```powershell
+irm https://raw.githubusercontent.com/ungkey/triple-crown/main/install.ps1 -OutFile install.ps1
+.\install.ps1 --yes
+```
+
+`TRIPLE_CROWN_NPM_PACKAGE` overrides both forms with an npm registry package.
 
 ---
 
