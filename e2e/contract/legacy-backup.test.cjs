@@ -237,3 +237,54 @@ test('mid-restore failure rolls back a newly-created target that already succeed
     fs.chmodSync(hooksDir, 0o755);
   }
 });
+
+test('restore refuses a manifest with no home field (exit 4), and --allow-foreign-home overrides it', () => {
+  const home = mkFakeHome();
+  const dest = path.join(home, 'backup');
+  assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
+
+  // MANIFEST.json은 서명 없는 평문 JSON이다 — home 필드 한 줄만 지워도 "이 홈이 맞다"는
+  // 뜻이 되어선 안 된다. 사람이 손댄(또는 손상된) 매니페스트를 흉내낸다.
+  const mp = path.join(dest, 'MANIFEST.json');
+  const manifest = JSON.parse(fs.readFileSync(mp, 'utf8'));
+  delete manifest.home;
+  fs.writeFileSync(mp, JSON.stringify(manifest, null, 2) + '\n');
+
+  const versionBefore = fs.readFileSync(path.join(home, '.triple-crown/VERSION'), 'utf8');
+
+  const refused = runBackupTool(['restore', '--from', dest, '--dry-run'], { HOME: home });
+  assert.strictEqual(refused.status, 4, `stdout:\n${refused.stdout}\nstderr:\n${refused.stderr}`);
+  assert.match(refused.stderr, /no home field/i);
+  assert.strictEqual(fs.readFileSync(path.join(home, '.triple-crown/VERSION'), 'utf8'), versionBefore,
+    'a missing home field must be refused even under --dry-run, and must not touch the home');
+
+  const allowed = runBackupTool(
+    ['restore', '--from', dest, '--dry-run', '--allow-foreign-home'], { HOME: home });
+  assert.strictEqual(allowed.status, 0, allowed.stderr);
+  assert.match(allowed.stdout + allowed.stderr, /WARNING/);
+});
+
+test('restore refuses a restoreOrder entry that escapes $HOME (exit 2, before any write)', () => {
+  const home = mkFakeHome();
+  const dest = path.join(home, 'backup');
+  assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
+
+  // 손으로 편집한 restoreOrder에 `..` 이스케이프를 심는다 — 도구가 만든 매니페스트는 이런
+  // 경로를 절대 만들지 않지만, MANIFEST.json은 그냥 평문 JSON이라 누구나 편집할 수 있다.
+  const mp = path.join(dest, 'MANIFEST.json');
+  const manifest = JSON.parse(fs.readFileSync(mp, 'utf8'));
+  const escapeRel = '../crew-legacy-escape-marker';
+  const escapedAbs = path.join(path.dirname(home), 'crew-legacy-escape-marker');
+  manifest.restoreOrder.push(escapeRel);
+  fs.writeFileSync(mp, JSON.stringify(manifest, null, 2) + '\n');
+
+  const versionBefore = fs.readFileSync(path.join(home, '.triple-crown/VERSION'), 'utf8');
+
+  const r = runBackupTool(['restore', '--from', dest], { HOME: home });
+  assert.strictEqual(r.status, 2, `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`);
+  assert.match(r.stderr, /escapes \$HOME/i);
+
+  assert.strictEqual(fs.existsSync(escapedAbs), false, 'the escaped target must never be written');
+  assert.strictEqual(fs.readFileSync(path.join(home, '.triple-crown/VERSION'), 'utf8'), versionBefore,
+    'aborting on an escape must not touch the legitimate home targets either');
+});

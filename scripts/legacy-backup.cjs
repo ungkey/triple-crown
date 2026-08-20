@@ -238,16 +238,23 @@ function samePath(a, b) {
   catch { return path.resolve(a) === path.resolve(b); }
 }
 
-// 안전 계약 1: 다른 홈에서 뜬 백업을 이 홈에 쏟지 않는다.
+// 안전 계약 1: 다른 홈에서 뜬 백업을 이 홈에 쏟지 않는다. home 필드가 아예 없는 매니페스트도
+// "이 홈이 맞다"는 뜻이 아니다 — MANIFEST.json은 서명 없는 평문 JSON이라, 한 줄만 지우면
+// 이 가드 전체가 무력화된다. 그 상태를 "일치"로 취급하지 않는다.
 function assertRestoreHome(home, manifest, allowForeignHome) {
-  if (!manifest.home || samePath(home, manifest.home)) return;
+  if (manifest.home && samePath(home, manifest.home)) return;
   if (!allowForeignHome) {
+    if (!manifest.home) {
+      fail('MANIFEST.json has no home field — refusing to restore. Pass --allow-foreign-home ' +
+        'only if you are certain this archive belongs on this machine.', 4);
+    }
     fail(`this backup was taken from a different home (manifest.home=${manifest.home}, ` +
       `current HOME=${home}). Restoring it here would delete this home's Triple Crown state ` +
       `and replace it with another machine's. Pass --allow-foreign-home only if that is ` +
       `exactly what you intend.`, 4);
   }
-  log(`WARNING: restoring a backup taken from ${manifest.home} into ${home} (--allow-foreign-home)`);
+  log(`WARNING: restoring a backup taken from ${manifest.home || '(unknown — MANIFEST.json has no home field)'} ` +
+    `into ${home} (--allow-foreign-home)`);
 }
 
 // 안전 계약 3: rename 후 복사, 실패 시 전량 롤백. 어떤 대상도 선삭제하지 않는다.
@@ -270,14 +277,29 @@ function applyRestore(home, tmp, restoreOrder, actions) {
       fs.cpSync(path.join(tmp, rel), dst, { recursive: true });
     }
   } catch (err) {
-    for (const dst of created.reverse()) {
-      fs.rmSync(dst, { recursive: true, force: true });
+    // 롤백 자체도 실패할 수 있다 (:rmSync/:renameSync). 여기서 또 던지면 스택 트레이스와 함께
+    // exit 1로 죽고, 사용자는 원본이 어디 있는지도 모른 채 반쯤 복구된 홈만 떠안는다. 계약 3의
+    // 보장은 무조건이므로, 지킬 수 없을 땐 최소한 롤백 디렉터리 경로와 아직 못 되돌린 항목을
+    // 알려야 한다.
+    try {
+      for (const dst of created.reverse()) {
+        fs.rmSync(dst, { recursive: true, force: true });
+      }
+      for (const m of moved.reverse()) {
+        fs.rmSync(m.dst, { recursive: true, force: true });
+        fs.renameSync(m.saved, m.dst);
+      }
+      fs.rmSync(rollback, { recursive: true, force: true });   // 롤백 완료 — 남길 이유 없음
+    } catch (rollbackErr) {
+      const unrestored = moved.filter((m) => exists(m.saved)).map((m) => m.dst);
+      const notCleaned = created.filter((dst) => exists(dst));
+      fail(`restore failed (${err.message}), and the automatic rollback also failed ` +
+        `(${rollbackErr.message}). Your original files are preserved at ${rollback} — do not ` +
+        `delete it.` +
+        (unrestored.length ? ` Not yet restored from there: ${unrestored.join(', ')}.` : '') +
+        (notCleaned.length ? ` Not yet cleaned up: ${notCleaned.join(', ')}.` : '') +
+        ` Restore by hand, then investigate before retrying.`, 2);
     }
-    for (const m of moved.reverse()) {
-      fs.rmSync(m.dst, { recursive: true, force: true });
-      fs.renameSync(m.saved, m.dst);
-    }
-    fs.rmSync(rollback, { recursive: true, force: true });   // 롤백 완료 — 남길 이유 없음
     fail(`restore failed (${err.message}) — rolled back, home is unchanged`, 2);
   }
   actions.push(`replaced targets kept for rollback at ~/${path.basename(rollback)} (delete when satisfied)`);
@@ -295,6 +317,13 @@ function restore(opts) {
   const tmp = extractArchive(opts.from);
   const actions = [];
   try {
+    // 손으로 편집한 restoreOrder의 `..` 이스케이프가 $HOME 밖을 건드리지 못하게 쓰기 전에 막는다.
+    const escaped = manifest.restoreOrder.filter((rel) => {
+      const resolved = path.resolve(home, rel);
+      return resolved !== home && !resolved.startsWith(home + path.sep);
+    });
+    if (escaped.length) fail(`restoreOrder escapes $HOME: ${escaped.join(', ')} — refusing to restore`, 2);
+
     // 안전 계약 2: 전량 존재 확인 후에만 쓰기 단계로 넘어간다.
     const missing = manifest.restoreOrder.filter((rel) => !exists(path.join(tmp, rel)));
     if (missing.length) {
