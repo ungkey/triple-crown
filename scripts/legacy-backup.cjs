@@ -277,29 +277,32 @@ function applyRestore(home, tmp, restoreOrder, actions) {
       fs.cpSync(path.join(tmp, rel), dst, { recursive: true });
     }
   } catch (err) {
-    // 롤백 자체도 실패할 수 있다 (:rmSync/:renameSync). 여기서 또 던지면 스택 트레이스와 함께
-    // exit 1로 죽고, 사용자는 원본이 어디 있는지도 모른 채 반쯤 복구된 홈만 떠안는다. 계약 3의
-    // 보장은 무조건이므로, 지킬 수 없을 땐 최소한 롤백 디렉터리 경로와 아직 못 되돌린 항목을
-    // 알려야 한다.
-    try {
-      for (const dst of created.reverse()) {
-        fs.rmSync(dst, { recursive: true, force: true });
-      }
-      for (const m of moved.reverse()) {
+    // 롤백은 항목 단위로 최선을 다한다 — 하나가 막혀도(:rmSync/:renameSync) 나머지 시도를
+    // 멈추지 않는다. 안 그러면 막힌 항목 하나 때문에 멀쩡히 되돌아왔을 나머지까지 전부
+    // 방치된다. dirname을 되돌리기 직전에 다시 만드는 건, created 정리가 moved 항목의 부모
+    // 디렉터리를 먼저 지웠을 수 있기 때문이다 (중첩된 매니페스트 항목의 경우).
+    for (const dst of created.reverse()) {
+      try { fs.rmSync(dst, { recursive: true, force: true }); } catch { /* best effort — 아래서 확인 */ }
+    }
+    for (const m of moved.reverse()) {
+      try {
+        fs.mkdirSync(path.dirname(m.dst), { recursive: true });
         fs.rmSync(m.dst, { recursive: true, force: true });
         fs.renameSync(m.saved, m.dst);
-      }
-      fs.rmSync(rollback, { recursive: true, force: true });   // 롤백 완료 — 남길 이유 없음
-    } catch (rollbackErr) {
-      const unrestored = moved.filter((m) => exists(m.saved)).map((m) => m.dst);
-      const notCleaned = created.filter((dst) => exists(dst));
-      fail(`restore failed (${err.message}), and the automatic rollback also failed ` +
-        `(${rollbackErr.message}). Your original files are preserved at ${rollback} — do not ` +
-        `delete it.` +
+      } catch { /* best effort — 아래서 확인 */ }
+    }
+    const unrestored = moved.filter((m) => exists(m.saved)).map((m) => m.dst);
+    const notCleaned = created.filter((dst) => exists(dst));
+    if (unrestored.length || notCleaned.length) {
+      // 계약 3의 보장은 무조건이므로, 전부 되돌리지 못했을 땐 최소한 롤백 디렉터리 경로와
+      // 아직 못 되돌린 항목을 알려야 한다 — 사용자가 직접 복구할 수 있게.
+      fail(`restore failed (${err.message}), and the automatic rollback could not fully complete. ` +
+        `Your original files are preserved at ${rollback} — do not delete it.` +
         (unrestored.length ? ` Not yet restored from there: ${unrestored.join(', ')}.` : '') +
         (notCleaned.length ? ` Not yet cleaned up: ${notCleaned.join(', ')}.` : '') +
         ` Restore by hand, then investigate before retrying.`, 2);
     }
+    try { fs.rmSync(rollback, { recursive: true, force: true }); } catch { /* 비어 있음 — 남아도 무해 */ }
     fail(`restore failed (${err.message}) — rolled back, home is unchanged`, 2);
   }
   actions.push(`replaced targets kept for rollback at ~/${path.basename(rollback)} (delete when satisfied)`);

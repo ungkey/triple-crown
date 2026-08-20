@@ -288,3 +288,61 @@ test('restore refuses a restoreOrder entry that escapes $HOME (exit 2, before an
   assert.strictEqual(fs.readFileSync(path.join(home, '.triple-crown/VERSION'), 'utf8'), versionBefore,
     'aborting on an escape must not touch the legitimate home targets either');
 });
+
+test('rollback recovers unrelated targets even when one entry is structurally blocked (best-effort undo)', () => {
+  const home = mkFakeHome();
+  const dest = path.join(home, 'backup');
+  assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
+
+  const versionBefore = fs.readFileSync(path.join(home, '.triple-crown/VERSION'), 'utf8');
+  const capabilityBefore = fs.readFileSync(
+    path.join(home, '.gsd/capabilities/triple-gstack/capability.json'), 'utf8');
+
+  // 손으로 편집한 restoreOrder에 부모 디렉터리(.claude/hooks)를, 이미 있던 자식 항목
+  // (.claude/hooks/triple-crown-ship-guard.cjs) 바로 앞에 끼워 넣는다. 도구가 만든
+  // 매니페스트는 이런 중첩 쌍을 절대 만들지 않지만, MANIFEST.json은 평문 JSON이라
+  // 누구나 편집할 수 있다.
+  const mp = path.join(dest, 'MANIFEST.json');
+  const manifest = JSON.parse(fs.readFileSync(mp, 'utf8'));
+  const hookFileIdx = manifest.restoreOrder.indexOf('.claude/hooks/triple-crown-ship-guard.cjs');
+  manifest.restoreOrder.splice(hookFileIdx, 0, '.claude/hooks');
+  fs.writeFileSync(mp, JSON.stringify(manifest, null, 2) + '\n');
+
+  // .claude/hooks 전체를 지워서 부모가 "새 대상"(created)이 되게 만든다 — forward pass에서
+  // 부모가 통째로 복사되면 그 안의 자식은 이제 "이미 있는" 대상(moved)으로 잡힌다.
+  fs.rmSync(path.join(home, '.claude/hooks'), { recursive: true, force: true });
+
+  // restoreOrder의 뒤쪽 항목(.claude/skills/gsd-triple-crown)에서 실제 EACCES로 forward pass를
+  // 끊는다 — round-1 테스트와 같은, 부모 디렉터리를 쓰기 불가로 만드는 진짜 권한 오류다.
+  fs.rmSync(path.join(home, '.claude/skills/gsd-triple-crown'), { recursive: true, force: true });
+  const skillsDir = path.join(home, '.claude/skills');
+  fs.chmodSync(skillsDir, 0o555);
+  try {
+    const r = runBackupTool(['restore', '--from', dest], { HOME: home });
+    assert.strictEqual(r.status, 2, `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`);
+
+    // 회복 가능한 대상(중첩과 무관한, 앞서 처리된 moved 항목들)은 실제로 홈에 되돌아와 있다 —
+    // 하나가 막혔다고 나머지까지 방치되지 않는다는 게 이번 수정의 핵심이다.
+    assert.strictEqual(fs.readFileSync(path.join(home, '.triple-crown/VERSION'), 'utf8'), versionBefore);
+    assert.strictEqual(
+      fs.readFileSync(path.join(home, '.gsd/capabilities/triple-gstack/capability.json'), 'utf8'),
+      capabilityBefore);
+
+    // created로 분류된 실패 유발 대상은 끝까지 존재하지 않는다.
+    assert.strictEqual(fs.existsSync(path.join(home, '.claude/skills/gsd-triple-crown')), false);
+
+    // 무언가 온전히 되돌아오지 못했다면(중첩된 .claude/hooks가 그 경우다 — 자식은 복구됐지만
+    // 부모 자체는 created 추적에서 "정리됨"으로 보지 않는다), 롤백 디렉터리의 절대 경로가
+    // stderr에 남아야 한다 — 사용자가 직접 확인할 곳을 알 수 있게.
+    const rollbackDirs = fs.readdirSync(home).filter((e) => e.startsWith('.crew-legacy-rollback-'));
+    if (rollbackDirs.length) {
+      assert.match(r.stderr, /could not fully complete/i);
+      assert.ok(r.stderr.includes(path.join(home, rollbackDirs[0])),
+        `rollback directory path must be disclosed in stderr:\n${r.stderr}`);
+    } else {
+      assert.match(r.stderr, /rolled back, home is unchanged/i);
+    }
+  } finally {
+    fs.chmodSync(skillsDir, 0o755);
+  }
+});
