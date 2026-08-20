@@ -346,3 +346,62 @@ test('rollback recovers unrelated targets even when one entry is structurally bl
     fs.chmodSync(skillsDir, 0o755);
   }
 });
+
+test('restore puts back removed targets and reinserts CLAUDE.md fragment', () => {
+  const home = mkFakeHome();
+  const dest = path.join(home, 'backup');
+  assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
+
+  // 제거를 흉내: 디렉터리·훅 삭제 + CLAUDE.md에서 마커 블록만 제거
+  fs.rmSync(path.join(home, '.triple-crown'), { recursive: true, force: true });
+  fs.rmSync(path.join(home, '.gsd/capabilities/triple-gstack'), { recursive: true, force: true });
+  fs.rmSync(path.join(home, '.claude/hooks/triple-crown-ship-guard.cjs'), { force: true });
+  fs.writeFileSync(path.join(home, 'CLAUDE.md'), '# user content\nuser line kept\nuser added later\n');
+
+  const r = runBackupTool(['restore', '--from', dest], { HOME: home });
+  assert.strictEqual(r.status, 0, r.stderr);
+
+  assert.ok(fs.existsSync(path.join(home, '.triple-crown/VERSION')));
+  assert.ok(fs.existsSync(path.join(home, '.gsd/capabilities/triple-gstack/capability.json')));
+  assert.ok(fs.existsSync(path.join(home, '.claude/hooks/triple-crown-ship-guard.cjs')));
+
+  const md = fs.readFileSync(path.join(home, 'CLAUDE.md'), 'utf8');
+  assert.match(md, /triple-crown:managed-routing:start/);
+  assert.match(md, /user added later/, 'user content must survive');
+  assert.ok(md.indexOf('managed-routing:start') < md.indexOf('# user content'),
+    'fragment restored at original position (line 1 -> prepend)');
+});
+
+test('restore is idempotent for CLAUDE.md when markers already present', () => {
+  const home = mkFakeHome();
+  const dest = path.join(home, 'backup');
+  assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
+  const before = fs.readFileSync(path.join(home, 'CLAUDE.md'), 'utf8');
+  const r = runBackupTool(['restore', '--from', dest], { HOME: home });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(fs.readFileSync(path.join(home, 'CLAUDE.md'), 'utf8'), before);
+});
+
+test('restore rolls back and leaves home unchanged when a copy fails midway', () => {
+  const home = mkFakeHome();
+  const dest = path.join(home, 'backup');
+  assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
+
+  // 백업 이후 현재 홈을 아카이브와 다르게 만든다 — 롤백이 '아카이브 내용'이 아니라
+  // '복구 직전 상태'를 되돌리는지 구분하기 위해.
+  const versionBefore = '9.9.9-local\n';
+  fs.writeFileSync(path.join(home, '.triple-crown/VERSION'), versionBefore);
+
+  // restoreOrder 중간 항목(.claude/hooks/... )에서 mkdir이 실패하도록 디렉터리 자리에 파일을 둔다.
+  fs.rmSync(path.join(home, '.claude/hooks'), { recursive: true, force: true });
+  fs.writeFileSync(path.join(home, '.claude/hooks'), 'not a directory\n');
+
+  const r = runBackupTool(['restore', '--from', dest], { HOME: home });
+  assert.notStrictEqual(r.status, 0, 'mid-copy failure must abort');
+  assert.match(r.stderr, /rolled back/i);
+  assert.strictEqual(fs.readFileSync(path.join(home, '.triple-crown/VERSION'), 'utf8'), versionBefore,
+    'targets replaced before the failure must be back at their pre-restore state');
+  assert.deepStrictEqual(
+    fs.readdirSync(home).filter((e) => e.startsWith('.crew-legacy-rollback-')), [],
+    'failed restore must not leave a rollback directory behind');
+});

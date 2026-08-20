@@ -226,7 +226,26 @@ function verify(opts) {
 }
 
 function restoreClaudeMd(home, from, manifest, actions, dryRun) {
-  actions.push('CLAUDE.md: (not implemented yet)');
+  if (!manifest.claudeMd.present) { actions.push('CLAUDE.md: no fragment in backup — skip'); return; }
+  const p = path.join(home, 'CLAUDE.md');
+  const fragment = fs.readFileSync(path.join(from, 'CLAUDE.md.fragment'), 'utf8');
+  if (!exists(p)) {
+    actions.push('CLAUDE.md: missing — create with fragment');
+    if (!dryRun) fs.writeFileSync(p, fragment);
+    return;
+  }
+  const text = fs.readFileSync(p, 'utf8');
+  if (text.includes(ROUTING_START) && text.includes(ROUTING_END)) {
+    actions.push('CLAUDE.md: marker block already present — no-op');
+    return;
+  }
+  if (manifest.claudeMd.startLine === 1) {
+    actions.push('CLAUDE.md: prepend fragment (original position: line 1)');
+    if (!dryRun) fs.writeFileSync(p, fragment + text);
+  } else {
+    actions.push('CLAUDE.md: append fragment');
+    if (!dryRun) fs.writeFileSync(p, text.replace(/\n?$/, '\n') + fragment);
+  }
 }
 
 function restoreSettings(home, tmp, from, manifest, actions, dryRun) {
