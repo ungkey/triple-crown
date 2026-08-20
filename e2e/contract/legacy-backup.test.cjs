@@ -123,3 +123,63 @@ test('detect tolerates a corrupted settings.json (exit 0, UNDETERMINED) while ba
   assert.notStrictEqual(b.status, 0);
   assert.match(b.stderr, /not valid JSON/i);
 });
+
+test('verify passes on intact backup and fails on tampered manifest', () => {
+  const home = mkFakeHome();
+  const dest = path.join(home, 'backup');
+  assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
+
+  assert.strictEqual(runBackupTool(['verify', '--from', dest], { HOME: home }).status, 0);
+
+  const mp = path.join(dest, 'MANIFEST.json');
+  const manifest = JSON.parse(fs.readFileSync(mp, 'utf8'));
+  const target = manifest.files.find((f) => f.kind === 'file');
+  target.sha256 = 'sha256:' + '0'.repeat(64);
+  fs.writeFileSync(mp, JSON.stringify(manifest, null, 2) + '\n');
+  const bad = runBackupTool(['verify', '--from', dest], { HOME: home });
+  assert.notStrictEqual(bad.status, 0);
+  assert.match(bad.stdout + bad.stderr, /mismatch/i);
+});
+
+test('restore --dry-run reports actions without writing', () => {
+  const home = mkFakeHome();
+  const dest = path.join(home, 'backup');
+  assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
+
+  // 제거를 흉내: 벤더 디렉터리와 훅 파일 삭제
+  fs.rmSync(path.join(home, '.triple-crown'), { recursive: true, force: true });
+  fs.rmSync(path.join(home, '.claude/hooks/triple-crown-ship-guard.cjs'), { force: true });
+  const claudeMdBefore = fs.readFileSync(path.join(home, 'CLAUDE.md'), 'utf8');
+
+  const r = runBackupTool(['restore', '--from', dest, '--dry-run'], { HOME: home });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, /\[dry-run\]/);
+  assert.match(r.stdout, /\.triple-crown/);
+
+  assert.strictEqual(fs.existsSync(path.join(home, '.triple-crown')), false, 'dry-run must not write');
+  assert.strictEqual(fs.readFileSync(path.join(home, 'CLAUDE.md'), 'utf8'), claudeMdBefore);
+});
+
+test('restore refuses a backup taken from a different home', () => {
+  const home = mkFakeHome();
+  const dest = path.join(home, 'backup');
+  assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
+
+  // 다른 계정/머신을 흉내: 자기 레거시 설치가 있는 별개의 홈
+  const other = mkFakeHome();
+  const otherVersion = fs.readFileSync(path.join(other, '.triple-crown/VERSION'), 'utf8');
+
+  const refused = runBackupTool(['restore', '--from', dest], { HOME: other });
+  assert.notStrictEqual(refused.status, 0, 'foreign-home restore must be refused');
+  assert.match(refused.stderr, /different home/i);
+  assert.strictEqual(fs.readFileSync(path.join(other, '.triple-crown/VERSION'), 'utf8'), otherVersion,
+    'refusal must not touch the current home');
+
+  const refusedDry = runBackupTool(['restore', '--from', dest, '--dry-run'], { HOME: other });
+  assert.notStrictEqual(refusedDry.status, 0, '--dry-run must not bypass the refusal');
+
+  const allowed = runBackupTool(
+    ['restore', '--from', dest, '--dry-run', '--allow-foreign-home'], { HOME: other });
+  assert.strictEqual(allowed.status, 0, allowed.stderr);
+  assert.match(allowed.stdout + allowed.stderr, /WARNING/);
+});

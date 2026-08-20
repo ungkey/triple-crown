@@ -21,7 +21,13 @@ const SKILL_MARKERS = ['.triple-crown-skill', '.crew-skill'];
 const SEMANTIC = new Set(['CLAUDE.md', '.claude/settings.json']);
 
 function log(m = '') { process.stdout.write(String(m) + '\n'); }
-function fail(msg, code = 1) { process.stderr.write(`legacy-backup: ${msg}\n`); process.exit(code); }
+const CLEANUP = [];
+function cleanup() {
+  while (CLEANUP.length) {
+    try { fs.rmSync(CLEANUP.pop(), { recursive: true, force: true }); } catch { /* best effort */ }
+  }
+}
+function fail(msg, code = 1) { cleanup(); process.stderr.write(`legacy-backup: ${msg}\n`); process.exit(code); }
 function sha256(buf) { return 'sha256:' + crypto.createHash('sha256').update(buf).digest('hex'); }
 function exists(p) { try { fs.lstatSync(p); return true; } catch { return false; } }
 function readJson(p) { return JSON.parse(fs.readFileSync(p, 'utf8')); }
@@ -172,6 +178,136 @@ function backup(opts) {
   log(`targets: ${targets.length}, files: ${files.length}`);
 }
 
+function extractArchive(from) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-legacy-x-'));
+  CLEANUP.push(tmp);                       // 어느 실패 경로로 빠져도 fail()이 지운다
+  const r = cp.spawnSync('tar', ['-xzf', path.join(from, 'archive.tar.gz'), '-C', tmp],
+    { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8' });
+  if (r.error || r.status !== 0) {
+    fail(`tar extract failed: ${(r.stderr || (r.error && r.error.message) || '').trim()}`, 2);
+  }
+  return tmp;
+}
+
+function verifyArchive(from) {
+  if (!exists(path.join(from, 'MANIFEST.json'))) fail(`no MANIFEST.json in ${from}`, 2);
+  const manifest = readJson(path.join(from, 'MANIFEST.json'));
+  if (manifest.schema !== 1) fail(`unsupported manifest schema: ${manifest.schema}`, 2);
+  const tmp = extractArchive(from);
+  const problems = [];
+  try {
+    for (const f of manifest.files) {
+      const abs = path.join(tmp, f.path);
+      if (!exists(abs)) { problems.push(`missing in archive: ${f.path}`); continue; }
+      if (f.kind === 'file') {
+        if (sha256(fs.readFileSync(abs)) !== f.sha256) problems.push(`sha256 mismatch: ${f.path}`);
+      } else if (f.kind === 'symlink') {
+        const st = fs.lstatSync(abs);
+        if (!st.isSymbolicLink() ||
+            sha256(Buffer.from('symlink:' + fs.readlinkSync(abs))) !== f.sha256) {
+          problems.push(`symlink mismatch: ${f.path}`);
+        }
+      }
+    }
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+  return { manifest, problems };
+}
+
+function verify(opts) {
+  if (!opts.from) fail('--from <backup dir> is required', 2);
+  const { manifest, problems } = verifyArchive(opts.from);
+  if (problems.length) {
+    for (const p of problems) log(`FAIL ${p}`);
+    fail(`${problems.length} mismatch(es) between MANIFEST.json and archive`, 2);
+  }
+  log(`verify OK: ${manifest.files.length} entries match archive`);
+}
+
+function restoreClaudeMd(home, from, manifest, actions, dryRun) {
+  actions.push('CLAUDE.md: (not implemented yet)');
+}
+
+function restoreSettings(home, tmp, from, manifest, actions, dryRun) {
+  actions.push('settings.json: (not implemented yet)');
+}
+
+function samePath(a, b) {
+  try { return fs.realpathSync(a) === fs.realpathSync(b); }
+  catch { return path.resolve(a) === path.resolve(b); }
+}
+
+// 안전 계약 1: 다른 홈에서 뜬 백업을 이 홈에 쏟지 않는다.
+function assertRestoreHome(home, manifest, allowForeignHome) {
+  if (!manifest.home || samePath(home, manifest.home)) return;
+  if (!allowForeignHome) {
+    fail(`this backup was taken from a different home (manifest.home=${manifest.home}, ` +
+      `current HOME=${home}). Restoring it here would delete this home's Triple Crown state ` +
+      `and replace it with another machine's. Pass --allow-foreign-home only if that is ` +
+      `exactly what you intend.`, 4);
+  }
+  log(`WARNING: restoring a backup taken from ${manifest.home} into ${home} (--allow-foreign-home)`);
+}
+
+// 안전 계약 3: rename 후 복사, 실패 시 전량 롤백. 어떤 대상도 선삭제하지 않는다.
+function applyRestore(home, tmp, restoreOrder, actions) {
+  const rollback = fs.mkdtempSync(path.join(home, '.crew-legacy-rollback-'));
+  const moved = [];
+  try {
+    for (const rel of restoreOrder) {
+      const dst = path.join(home, rel);
+      if (exists(dst)) {
+        const saved = path.join(rollback, rel);
+        fs.mkdirSync(path.dirname(saved), { recursive: true });
+        fs.renameSync(dst, saved);                 // $HOME 내부 — cross-device 아님
+        moved.push({ dst, saved });
+      }
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      fs.cpSync(path.join(tmp, rel), dst, { recursive: true });
+    }
+  } catch (err) {
+    for (const m of moved.reverse()) {
+      fs.rmSync(m.dst, { recursive: true, force: true });
+      fs.renameSync(m.saved, m.dst);
+    }
+    fs.rmSync(rollback, { recursive: true, force: true });   // 롤백 완료 — 남길 이유 없음
+    fail(`restore failed (${err.message}) — rolled back, home is unchanged`, 2);
+  }
+  actions.push(`replaced targets kept for rollback at ~/${path.basename(rollback)} (delete when satisfied)`);
+}
+
+function restore(opts) {
+  const home = os.homedir();
+  if (!opts.from) fail('--from <backup dir> is required', 2);
+  const { manifest, problems } = verifyArchive(opts.from);   // 설계 §2.5 1단계
+  if (problems.length) {
+    for (const p of problems) log(`FAIL ${p}`);
+    fail('archive does not match MANIFEST.json — aborting restore', 2);
+  }
+  assertRestoreHome(home, manifest, opts.allowForeignHome);   // 안전 계약 1 — 쓰기 전, dry-run도 동일
+  const tmp = extractArchive(opts.from);
+  const actions = [];
+  try {
+    // 안전 계약 2: 전량 존재 확인 후에만 쓰기 단계로 넘어간다.
+    const missing = manifest.restoreOrder.filter((rel) => !exists(path.join(tmp, rel)));
+    if (missing.length) {
+      fail(`archive is missing restore targets: ${missing.join(', ')} — nothing was changed`, 2);
+    }
+    for (const rel of manifest.restoreOrder) {
+      actions.push(`${exists(path.join(home, rel)) ? 'overwrite' : 'create'}: ~/${rel}`);
+    }
+    if (!opts.dryRun) applyRestore(home, tmp, manifest.restoreOrder, actions);
+    restoreClaudeMd(home, opts.from, manifest, actions, opts.dryRun);
+    restoreSettings(home, tmp, opts.from, manifest, actions, opts.dryRun);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+  for (const a of actions) log((opts.dryRun ? '[dry-run] ' : '') + a);
+  if (opts.dryRun) { log('dry-run: no writes performed'); return; }
+  log('restore complete. Verify capability registrations with: gsd-tools capability list');
+}
+
 // 판정용 — 이 머신에 실제로 뭐가 있는지만 보고한다. 부재는 오류가 아니므로 항상 exit 0.
 // Task 9 런북이 파괴적 단계로 갈지 말지를 이 출력 하나로 결정한다.
 function detect() {
@@ -192,19 +328,23 @@ function detect() {
 }
 
 function parseArgs(argv) {
-  const out = { command: argv[0], dest: null, from: null, dryRun: false };
+  const out = { command: argv[0], dest: null, from: null, dryRun: false, allowForeignHome: false };
   const rest = argv.slice(1);
   while (rest.length) {
     const a = rest.shift();
     if (a === '--dest') out.dest = rest.shift() || fail('--dest requires a path', 2);
     else if (a === '--from') out.from = rest.shift() || fail('--from requires a path', 2);
     else if (a === '--dry-run') out.dryRun = true;
+    else if (a === '--allow-foreign-home') out.allowForeignHome = true;
     else fail(`unknown option: ${a}`, 2);
   }
   return out;
 }
 
 const opts = parseArgs(process.argv.slice(2));
-if (opts.command === 'detect') detect();
+if (opts.command === 'detect') detect();            // Task 3 — 여기서 빠뜨리면 Task 9 Step 1이 죽는다
 else if (opts.command === 'backup') backup(opts);
-else fail('usage: legacy-backup.cjs detect | backup [--dest DIR] | verify --from DIR | restore --from DIR [--dry-run]', 2);
+else if (opts.command === 'verify') verify(opts);
+else if (opts.command === 'restore') restore(opts);
+else fail('usage: legacy-backup.cjs detect | backup [--dest DIR] | verify --from DIR | ' +
+  'restore --from DIR [--dry-run] [--allow-foreign-home]', 2);
