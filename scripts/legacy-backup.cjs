@@ -254,6 +254,7 @@ function assertRestoreHome(home, manifest, allowForeignHome) {
 function applyRestore(home, tmp, restoreOrder, actions) {
   const rollback = fs.mkdtempSync(path.join(home, '.crew-legacy-rollback-'));
   const moved = [];
+  const created = [];
   try {
     for (const rel of restoreOrder) {
       const dst = path.join(home, rel);
@@ -262,11 +263,16 @@ function applyRestore(home, tmp, restoreOrder, actions) {
         fs.mkdirSync(path.dirname(saved), { recursive: true });
         fs.renameSync(dst, saved);                 // $HOME 내부 — cross-device 아님
         moved.push({ dst, saved });
+      } else {
+        created.push(dst);                          // 시작 상태에 없던 대상 — 실패 시 지워야 홈이 그대로다
       }
       fs.mkdirSync(path.dirname(dst), { recursive: true });
       fs.cpSync(path.join(tmp, rel), dst, { recursive: true });
     }
   } catch (err) {
+    for (const dst of created.reverse()) {
+      fs.rmSync(dst, { recursive: true, force: true });
+    }
     for (const m of moved.reverse()) {
       fs.rmSync(m.dst, { recursive: true, force: true });
       fs.renameSync(m.saved, m.dst);

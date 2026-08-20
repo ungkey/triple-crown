@@ -183,3 +183,57 @@ test('restore refuses a backup taken from a different home', () => {
   assert.strictEqual(allowed.status, 0, allowed.stderr);
   assert.match(allowed.stdout + allowed.stderr, /WARNING/);
 });
+
+test('mid-restore failure rolls back a newly-created target that already succeeded (exit 2, home unchanged)', () => {
+  const home = mkFakeHome();
+  const dest = path.join(home, 'backup');
+  assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
+
+  const capabilityBefore = fs.readFileSync(
+    path.join(home, '.gsd/capabilities/triple-gstack/capability.json'), 'utf8');
+
+  // restoreOrder의 첫 항목(.triple-crown)을 백업 이후 지워서, restore 시점에는 "시작 상태에
+  // 없던 새 대상"이 되게 만든다. restoreOrder 순서상 이 항목은 실패 지점보다 먼저 처리되므로,
+  // 아무 방해가 없으면 cpSync가 통째로 성공해 home에 새로 생긴다 — moved[]는 기존 대상만
+  // 추적하므로, 고치기 전 코드는 이 성공한 새 디렉터리를 롤백 목록에 넣지 못하고 그대로 남긴다.
+  // 그것이 지금 고친 결함이다.
+  fs.rmSync(path.join(home, '.triple-crown'), { recursive: true, force: true });
+
+  // restoreOrder의 뒤쪽 항목(.claude/hooks/triple-crown-ship-guard.cjs)도 지워서 이 항목 역시
+  // "새 대상"으로 만든다 — exists(dst)가 false이므로 renameSync가 아니라 곧장 cpSync 경로를
+  // 타게 되고, 그 cpSync를 실제 EACCES로 실패시킨다: 부모 디렉터리를 쓰기 불가로 만들면
+  // mkdirSync(recursive)는 이미 존재하는 디렉터리라 성공하지만, 그 안에 새 파일을 만드는
+  // cpSync는 진짜 권한 오류로 죽는다 — mock이 아니라 실제 코드 경로(fs.cpSync)가 실제 OS 권한
+  // 검사에 걸려 실패하는 것이다. .triple-crown은 restoreOrder에서 이 항목보다 앞서 있으므로,
+  // 이 실패가 나는 시점엔 이미 성공적으로 복사되어 있다.
+  fs.rmSync(path.join(home, '.claude/hooks/triple-crown-ship-guard.cjs'), { force: true });
+  const hooksDir = path.join(home, '.claude/hooks');
+  fs.chmodSync(hooksDir, 0o555);
+  try {
+    const r = runBackupTool(['restore', '--from', dest], { HOME: home });
+    assert.strictEqual(r.status, 2, `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`);
+    assert.match(r.stderr, /restore failed/i);
+
+    // 실패 지점 자체인 대상은 부분 생성 없이 시작 상태(부재)로 남는다.
+    assert.strictEqual(
+      fs.existsSync(path.join(home, '.claude/hooks/triple-crown-ship-guard.cjs')), false,
+      'the failing target itself must not be left partially copied');
+
+    // 핵심 회귀 검증: 실패 지점보다 먼저 성공적으로 새로 생성된 대상(.triple-crown)도
+    // 시작 상태(부재)로 되돌아가야 한다 — "rolled back, home is unchanged" 메시지가 참이 되려면.
+    assert.strictEqual(
+      fs.existsSync(path.join(home, '.triple-crown')), false,
+      'a target that did not exist before restore must not survive a mid-restore rollback');
+
+    // 이미 존재했던 대상(capabilities)은 rename-복원으로 온전히 되돌아온다.
+    assert.strictEqual(
+      fs.readFileSync(path.join(home, '.gsd/capabilities/triple-gstack/capability.json'), 'utf8'),
+      capabilityBefore);
+
+    // 롤백이 끝났으므로 롤백 디렉터리도 남기지 않는다.
+    const leftoverRollback = fs.readdirSync(home).filter((e) => e.startsWith('.crew-legacy-rollback-'));
+    assert.deepStrictEqual(leftoverRollback, []);
+  } finally {
+    fs.chmodSync(hooksDir, 0o755);
+  }
+});
