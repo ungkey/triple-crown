@@ -76,6 +76,10 @@ function gte(v,min) {
   for(let i=0;i<3;i++){if(a[i]>min[i])return true;if(a[i]<min[i])return false;}
   return true;
 }
+function sameRealPath(a,b) {
+  try { return fs.realpathSync(a)===fs.realpathSync(b); }
+  catch { return path.resolve(a)===path.resolve(b); }
+}
 function exists(p) { try{return fs.existsSync(p);}catch{return false;} }
 function mkdirp(p) { fs.mkdirSync(p,{recursive:true}); }
 function readJson(p) { try{return JSON.parse(fs.readFileSync(p,'utf8'));}catch{return null;} }
@@ -512,6 +516,9 @@ async function install(root,opts) {
   if(!exists(root) || !fs.statSync(root).isDirectory()) fail(`Project directory does not exist: ${root}`);
   if(VERSION.includes('-') && !opts.allowPrerelease) {
     fail(`Triple Crown v${VERSION} is a prerelease build from a development branch. Install a tagged release instead, or pass --allow-prerelease to proceed anyway.`,4);
+  }
+  if(sameRealPath(root, os.homedir())) {
+    fail(`Refusing to install with the home directory as project root ($HOME = ${os.homedir()}). A $HOME-rooted install collapses project scope into global scope. Run from inside a project, or pass --project <project path>.`,4);
   }
   const actions=[
     `vendor Triple Crown v${VERSION} runtime files to ${path.join(root,'.triple-crown')}`,
