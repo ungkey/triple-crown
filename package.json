@@ -44,6 +44,7 @@
   },
   "scripts": {
     "test": "python tests/run_installer_smoke.py && python tests/run_v061_l0.py",
+    "test:l1": "node --test 'e2e/contract/*.test.cjs'",
     "pack:check": "npm pack --dry-run"
   }
 }

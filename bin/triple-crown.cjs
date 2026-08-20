@@ -86,7 +86,7 @@ function parse(argv) {
   const out={
     command:'install', project:null, yes:false, bootstrap:true,
     routing:true, shipGuard:true, dryRun:false, strict:false, json:false,
-    verbose:false
+    verbose:false, allowPrerelease:false
   };
   const rest=[...argv];
   if(rest.length && !rest[0].startsWith('-')) out.command=rest.shift();
@@ -103,6 +103,7 @@ function parse(argv) {
     else if(a==='--strict') out.strict=true;
     else if(a==='--json') out.json=true;
     else if(a==='--verbose'||a==='-v') out.verbose=true;
+    else if(a==='--allow-prerelease') out.allowPrerelease=true;
     else if(a==='--help'||a==='-h') out.command='help';
     else fail(`unknown option: ${a}`,2);
   }
@@ -509,6 +510,9 @@ function runStatus(root,args=[]) {
 }
 async function install(root,opts) {
   if(!exists(root) || !fs.statSync(root).isDirectory()) fail(`Project directory does not exist: ${root}`);
+  if(VERSION.includes('-') && !opts.allowPrerelease) {
+    fail(`Triple Crown v${VERSION} is a prerelease build from a development branch. Install a tagged release instead, or pass --allow-prerelease to proceed anyway.`,4);
+  }
   const actions=[
     `vendor Triple Crown v${VERSION} runtime files to ${path.join(root,'.triple-crown')}`,
     'install/refresh 3 project-scoped GSD capabilities with explicit consent',
@@ -624,6 +628,7 @@ Install options:
   --dry-run            Show actions without writing
   --strict             Reserved for stricter dependency checks
   --verbose, -v        Show more child-process detail
+  --allow-prerelease   Install even when VERSION is a prerelease build
 
 Immediate local package usage:
   npx --yes --package ./triple-crown-workflow-installer-0.6.3.tgz triple-crown install --yes
