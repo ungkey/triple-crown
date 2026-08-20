@@ -78,12 +78,20 @@ function collectTargets(home) {
   return targets;
 }
 
+// 마커 쌍을 찾는 단일 술어. extractFragment(backup)와 restoreClaudeMd(restore)가 반드시
+// 같은 판정을 써야 한다 — detect와 backup이 legacySignals를 공유하는 것과 같은 이유다.
+// 어긋나면 backup이 뽑아낸 블록을 restore가 인식하지 못하는 상황이 생긴다.
+function findMarkerRange(lines) {
+  const start = lines.findIndex((l) => l.trim() === ROUTING_START);
+  const end = lines.findIndex((l) => l.trim() === ROUTING_END);
+  return { start, end };
+}
+
 function extractFragment(home) {
   const p = path.join(home, 'CLAUDE.md');
   if (!exists(p)) return { present: false };
   const lines = fs.readFileSync(p, 'utf8').split('\n');
-  const s = lines.findIndex((l) => l.trim() === ROUTING_START);
-  const e = lines.findIndex((l) => l.trim() === ROUTING_END);
+  const { start: s, end: e } = findMarkerRange(lines);
   if (s === -1 || e === -1 || e < s) return { present: false };
   const fragment = lines.slice(s, e + 1).join('\n') + '\n';
   return { present: true, startLine: s + 1, endLine: e + 1, fragment,
@@ -235,9 +243,29 @@ function restoreClaudeMd(home, from, manifest, actions, dryRun) {
     return;
   }
   const text = fs.readFileSync(p, 'utf8');
-  if (text.includes(ROUTING_START) && text.includes(ROUTING_END)) {
+  const lines = text.split('\n');
+  const { start: s, end: e } = findMarkerRange(lines);
+  const properPair = s !== -1 && e !== -1 && s < e;
+  const malformed = ((s === -1) !== (e === -1)) || (s !== -1 && e !== -1 && e < s);
+  if (properPair) {
     actions.push('CLAUDE.md: marker block already present — no-op');
     return;
+  }
+  if (malformed) {
+    let where;
+    if (s !== -1 && e !== -1) {
+      where = `end marker found at line ${e + 1} before the start marker at line ${s + 1}`;
+    } else if (s !== -1) {
+      where = `only the start marker was found, at line ${s + 1} — no matching end marker`;
+    } else {
+      where = `only the end marker was found, at line ${e + 1} — no matching start marker`;
+    }
+    const status = dryRun
+      ? 'this was a dry run — nothing was written to CLAUDE.md.'
+      : 'the restoreOrder targets (directories/files) were already restored successfully; ' +
+        'only ~/CLAUDE.md was left untouched.';
+    fail(`CLAUDE.md has a malformed managed-routing marker: ${where}. ${status} ` +
+      `Fix the marker pair by hand in ~/CLAUDE.md (or remove both markers and re-run restore).`, 2);
   }
   if (manifest.claudeMd.startLine === 1) {
     actions.push('CLAUDE.md: prepend fragment (original position: line 1)');

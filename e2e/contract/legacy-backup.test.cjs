@@ -405,3 +405,98 @@ test('restore rolls back and leaves home unchanged when a copy fails midway', ()
     fs.readdirSync(home).filter((e) => e.startsWith('.crew-legacy-rollback-')), [],
     'failed restore must not leave a rollback directory behind');
 });
+
+test('restore appends CLAUDE.md fragment when the original marker was not at file start', () => {
+  const home = mkFakeHome();
+  const dest = path.join(home, 'backup');
+  assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
+
+  // 매니페스트를 손질해 원래 마커가 1행이 아니었던 것처럼 만든다 — restoreClaudeMd가
+  // prepend가 아니라 append 분기를 타게 하기 위해서다 (fake home의 마커는 항상 1행이므로).
+  const mp = path.join(dest, 'MANIFEST.json');
+  const manifest = JSON.parse(fs.readFileSync(mp, 'utf8'));
+  manifest.claudeMd.startLine = 5;
+  fs.writeFileSync(mp, JSON.stringify(manifest, null, 2) + '\n');
+
+  // 마커 없는, 끝에 개행이 없는 사용자 파일 — append가 사용자 바이트를 그대로 보존하고
+  // 구분용 개행 하나만 정규화해 붙이는지 확인한다.
+  const userContent = '# user content\nuser line kept, no trailing newline';
+  fs.writeFileSync(path.join(home, 'CLAUDE.md'), userContent);
+
+  const r = runBackupTool(['restore', '--from', dest], { HOME: home });
+  assert.strictEqual(r.status, 0, r.stderr);
+
+  const md = fs.readFileSync(path.join(home, 'CLAUDE.md'), 'utf8');
+  const frag = fs.readFileSync(path.join(dest, 'CLAUDE.md.fragment'), 'utf8');
+  assert.strictEqual(md, userContent + '\n' + frag,
+    'user bytes preserved verbatim, single newline normalized, fragment appended at the end');
+});
+
+test('restore --dry-run does not write CLAUDE.md when appending (startLine !== 1)', () => {
+  const home = mkFakeHome();
+  const dest = path.join(home, 'backup');
+  assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
+
+  const mp = path.join(dest, 'MANIFEST.json');
+  const manifest = JSON.parse(fs.readFileSync(mp, 'utf8'));
+  manifest.claudeMd.startLine = 5;
+  fs.writeFileSync(mp, JSON.stringify(manifest, null, 2) + '\n');
+
+  const userContent = '# user content\nuser line kept\n';
+  fs.writeFileSync(path.join(home, 'CLAUDE.md'), userContent);
+
+  const r = runBackupTool(['restore', '--from', dest, '--dry-run'], { HOME: home });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, /\[dry-run\] CLAUDE\.md: append fragment/);
+  assert.strictEqual(fs.readFileSync(path.join(home, 'CLAUDE.md'), 'utf8'), userContent,
+    'dry-run must not write CLAUDE.md (append branch)');
+});
+
+test('restore --dry-run does not create CLAUDE.md when it is absent', () => {
+  const home = mkFakeHome();
+  const dest = path.join(home, 'backup');
+  assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
+  fs.rmSync(path.join(home, 'CLAUDE.md'));
+
+  const r = runBackupTool(['restore', '--from', dest, '--dry-run'], { HOME: home });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, /\[dry-run\] CLAUDE\.md: missing — create with fragment/);
+  assert.strictEqual(fs.existsSync(path.join(home, 'CLAUDE.md')), false,
+    'dry-run must not create CLAUDE.md');
+});
+
+test('restore --dry-run does not write CLAUDE.md when prepending (startLine === 1)', () => {
+  const home = mkFakeHome();
+  const dest = path.join(home, 'backup');
+  assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
+
+  const userContent = '# user content\nuser line kept\nuser added later\n';
+  fs.writeFileSync(path.join(home, 'CLAUDE.md'), userContent);
+
+  const r = runBackupTool(['restore', '--from', dest, '--dry-run'], { HOME: home });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, /\[dry-run\] CLAUDE\.md: prepend fragment/);
+  assert.strictEqual(fs.readFileSync(path.join(home, 'CLAUDE.md'), 'utf8'), userContent,
+    'dry-run must not write CLAUDE.md (prepend branch)');
+});
+
+test('restore refuses a malformed CLAUDE.md marker state (exit 2, no write, restoreOrder still applied)', () => {
+  const home = mkFakeHome();
+  const dest = path.join(home, 'backup');
+  assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
+
+  // restoreOrder가 CLAUDE.md 실패와 무관하게 정상 적용됐는지 보려고 미리 지운다.
+  fs.rmSync(path.join(home, '.triple-crown'), { recursive: true, force: true });
+
+  // 마커가 반쯤만 남은 상태를 흉내: 시작 마커만 있고 끝 마커가 없다.
+  const malformed = '<!-- triple-crown:managed-routing:start -->\n# user notes\nkept as-is\n';
+  fs.writeFileSync(path.join(home, 'CLAUDE.md'), malformed);
+
+  const r = runBackupTool(['restore', '--from', dest], { HOME: home });
+  assert.strictEqual(r.status, 2, `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`);
+  assert.match(r.stderr, /malformed/i);
+  assert.strictEqual(fs.readFileSync(path.join(home, 'CLAUDE.md'), 'utf8'), malformed,
+    'a malformed marker state must not be written to');
+  assert.ok(fs.existsSync(path.join(home, '.triple-crown/VERSION')),
+    'restoreOrder targets must still be restored even though CLAUDE.md was refused');
+});
