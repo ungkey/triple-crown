@@ -104,3 +104,22 @@ test('default backup directory uses the local date, not the UTC date', () => {
       'stdout must print the actual dest so the runbook can reuse it');
   }
 });
+
+test('detect tolerates a corrupted settings.json (exit 0, UNDETERMINED) while backup still refuses it', () => {
+  // 손상된 settings.json은 detect가 살아남아야 하는 바로 그 미지 상태다 — 반쯤 고친
+  // 설정 파일을 가진 머신에서도 Task 9의 런북은 detect의 exit code로 진행 여부를 정한다.
+  const home = fs.mkdtempSync(path.join(require('os').tmpdir(), 'crew-corrupt-'));
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.claude/settings.json'), '{ this is not valid json');
+
+  const d = runBackupTool(['detect'], { HOME: home });
+  assert.strictEqual(d.status, 0, d.stderr);
+  assert.match(d.stdout, /settings\.json ship-guard group: UNDETERMINED \(not valid JSON\)/);
+  assert.match(d.stdout, /^legacy targets: 0$/m, 'an unparseable file must not be counted as a legacy signal');
+
+  // backup must still fail loudly on the same corrupted file — a silent
+  // hasHookGroup:false in the manifest would be a false backup.
+  const b = runBackupTool(['backup', '--dest', path.join(home, 'b')], { HOME: home });
+  assert.notStrictEqual(b.status, 0);
+  assert.match(b.stderr, /not valid JSON/i);
+});

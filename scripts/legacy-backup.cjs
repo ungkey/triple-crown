@@ -84,13 +84,23 @@ function extractFragment(home) {
     fragmentSha256: sha256(Buffer.from(fragment)) };
 }
 
-function extractHookGroup(home) {
+// opts.tolerant: when the file exists but is not valid JSON, return a
+// { present: true, group: null, parseError: true } result instead of calling
+// fail() and exiting. Only `detect` passes this — a judgment tool must never
+// die on a hand-edited settings.json (design doc §1.2/§1.3, review round 1).
+// `backup` calls this with no opts and keeps the loud fail(): a manifest that
+// silently records hasHookGroup:false for a file it could not parse would be
+// a false backup, and `restore` (Task 4-6) trusts that manifest.
+function extractHookGroup(home, opts = {}) {
   const p = path.join(home, '.claude', 'settings.json');
   if (!exists(p)) return { present: false };
   const raw = fs.readFileSync(p);
   let parsed;
   try { parsed = JSON.parse(raw.toString('utf8')); }
-  catch (err) { fail(`~/.claude/settings.json is not valid JSON: ${err.message}`, 2); }
+  catch (err) {
+    if (opts.tolerant) return { present: true, sha256: sha256(raw), group: null, parseError: true };
+    fail(`~/.claude/settings.json is not valid JSON: ${err.message}`, 2);
+  }
   const pre = parsed && parsed.hooks && parsed.hooks.PreToolUse;
   const groups = Array.isArray(pre) ? pre.filter((g) =>
     Array.isArray(g && g.hooks) &&
@@ -168,12 +178,16 @@ function detect() {
   const home = os.homedir();
   const targets = collectTargets(home);
   const frag = extractFragment(home);
-  const hook = extractHookGroup(home);
+  const hook = extractHookGroup(home, { tolerant: true });
   const { owned, count } = legacySignals(home, targets, frag, hook);
   log(`home: ${home}`);
   for (const t of owned) log(`  owned  ${t.kind === 'dir' ? 'dir ' : 'file'} ~/${t.rel}`);
   log(`  CLAUDE.md routing marker: ${frag.present ? `lines ${frag.startLine}-${frag.endLine}` : 'absent'}`);
-  log(`  settings.json ship-guard group: ${hook.present && hook.group ? 'present' : 'absent'}`);
+  if (hook.parseError) {
+    log('  settings.json ship-guard group: UNDETERMINED (not valid JSON)');
+  } else {
+    log(`  settings.json ship-guard group: ${hook.present && hook.group ? 'present' : 'absent'}`);
+  }
   log(`legacy targets: ${count}`);
 }
 
