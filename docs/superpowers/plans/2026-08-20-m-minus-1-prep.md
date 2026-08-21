@@ -67,7 +67,7 @@ tests/run_npx_tarball_smoke.py  수정 — 동일 (Task 7)
 - Modify: `package.json` (`scripts`)
 
 **Interfaces:**
-- Produces: `npm run test:l1` = `node --test e2e/contract/` (이후 모든 태스크가 사용). `triple-crown install`은 `VERSION`에 하이픈이 있으면 exit 4 + stderr에 `prerelease` 포함, `--allow-prerelease`면 진행.
+- Produces: `npm run test:l1` = `node --test "e2e/contract/**/*.test.cjs"` (이후 모든 태스크가 사용). `triple-crown install`은 `VERSION`에 하이픈이 있으면 exit 4 + stderr에 `prerelease` 포함, `--allow-prerelease`면 진행.
 
 - [ ] **Step 1: 실패하는 테스트 작성**
 
@@ -138,8 +138,21 @@ test('repo tree install behavior matches its own VERSION prerelease state', () =
 `package.json`의 `scripts`에 추가 (기존 `test`·`pack:check`는 그대로):
 
 ```jsonc
-"test:l1": "node --test e2e/contract/"
+"test:l1": "node -e \"const n=require('fs').readdirSync('e2e/contract',{recursive:true}).filter(f=>String(f).endsWith('.test.cjs')).length;if(!n)throw new Error('L1 gate found no *.test.cjs under e2e/contract - refusing to report a vacuous pass')\" && node --test \"e2e/contract/**/*.test.cjs\""
 ```
+
+> **디렉터리 인자를 쓰지 않는다.** 실측(Node v24.14.0): `node --test e2e/contract/` 는 그 경로를
+> 테스트 *파일* 로 취급해 `Cannot find module '…/e2e/contract'` 로 죽는다 — Node 22 부터 러너가
+> glob 기반으로 바뀌었기 때문이다.
+>
+> **따옴표는 쌍따옴표여야 한다.** npm 의 기본 script-shell 은 Windows 에서 `cmd.exe` 이고, `cmd.exe`
+> 는 홑따옴표를 벗겨내지 않는다 — `'e2e/contract/**/*.test.cjs'` 로 쓰면 따옴표째 Node 에 넘어가
+> 0 개 매치가 된다. 쌍따옴표는 POSIX `sh` 와 `cmd.exe` 가 모두 벗겨내므로 Node 가 자체 glob 을
+> 전개한다. `helpers/` 안의 비-테스트 파일은 패턴에 안 걸린다.
+>
+> **0 매치는 exit 0 이다** (실측). 그래서 러너 앞에 계약 테스트 존재 여부를 세는 사전 검사를 둔다 —
+> 이 게이트가 8 개 태스크 전부의 인증 근거이므로, 디렉터리가 사라지면 조용히 green 이 되는 대신
+> 시끄럽게 죽어야 한다.
 
 - [ ] **Step 2: 실패 확인**
 
