@@ -18,7 +18,7 @@
 - **push 금지.** 커밋·태그는 로컬에만. push는 사용자 승인 후 별도. (`.github/workflows/`를 추가해도 push 전까지는 아무것도 실행되지 않는다 — 그 사실을 Task 6에 명시한다.)
 - **M0은 개명 단계가 아니다.** 코드 식별자·스킬명·디렉터리명·환경변수는 전부 `triple-crown`/`triple-gstack`/`TRIPLE_CROWN_*` 유지. 신규로 만드는 이름(`lib/`, `build-capabilities.cjs`, `LIB-HASH.json`)만 브랜드 중립이다.
 - **머신·폴더 종속 금지.** 저장소 경로는 `path.resolve(__dirname, '..')` 또는 `git rev-parse --show-toplevel`로 얻는다. 하드코딩된 절대 경로를 새로 만들지 않는다. 트리를 더럽히는 테스트는 반드시 임시 복사본에서 돈다.
-- 파일 800줄 이하. `scripts/build-capabilities.cjs` 목표 ~150줄.
+- 파일 800줄 이하. `scripts/build-capabilities.cjs` 목표 ~200줄 (2-패스 분리 + 출처/prune 가드 포함).
 - **canonical `lib/`은 배포하지 않는다.** `package.json`의 `files`에 `lib`을 추가하지 않는다. 배포본에는 사본만 들어가고, 설치 시점 검사는 **사본 대 `LIB-HASH.json`** 으로만 성립해야 한다 (Task 5의 근거).
 
 ## 선행 조건 (착수 전 확인)
@@ -80,8 +80,8 @@ e2e/contract/
 
 이 절의 값은 전부 이 저장소에서 직접 확인했다. **관측 시점의 사실이지 계약이 아니다** — 실행 시 어긋나면 계획이 아니라 실측을 따른다.
 
-- `git rev-parse --show-toplevel` → `/home/dev/works/harness/triple-crown` · HEAD `e183d53 docs: M-1 준비 커밋 구현 계획`
-- **M-1은 아직 실행되지 않았다.** `VERSION`=`0.6.4`, `scripts/`에는 `configure-distribution.cjs`·`install-claude-ship-guard.cjs` 둘뿐, `e2e/contract/` 없음, `.github/` 없음
+- `git rev-parse --show-toplevel` → 저장소 루트. HEAD `6889181 docs: add the M0 shared-lib build plan, reconciled against the shipped M-1` (**2026-08-21 재실측**)
+- **M-1은 출하 완료다.** `VERSION`=`0.6.5`, 태그 `v0.6.4`·`v0.6.5` 존재, `install.sh:34`이 `REF="${TRIPLE_CROWN_REF:-v0.6.5}"`, `scripts/legacy-backup.cjs` 존재, `e2e/contract/`에 `home-root-refusal`·`install-entrypoints`·`legacy-backup`·`prerelease-fence` 4파일 + `helpers/fake-home.cjs`, **L1 42건 green**. `.github/` 없음
 - 공유 lib 현 위치·줄수: `capabilities/triple-gstack/checks/repo-state-lib.cjs` 194줄 · `evidence-store.cjs` 260줄 · `resolve-phase-dir.cjs` 90줄 (설계 §3 표기와 일치)
 - 세 파일 모두 `__dirname` 미사용 — 경로 가정이 없으므로 이동해도 동작이 변하지 않는다. `process.cwd()` 기반(`repo-state-lib.cjs:38,48` · `resolve-phase-dir.cjs:65`)이라 호출자 cwd만 영향
 - `require('./repo-state-lib.cjs')` 등 **바깥 참조 14곳 / 12파일**: `review-session.cjs:9,14` · `canary-session.cjs:9` · `security-risk.cjs:4` · `release-ledger.cjs:7` · `uat-bridge.cjs:6` · `qa-session.cjs:6` · `security-ready.cjs:3` · `security-session.cjs:4` · `verify-ready.cjs:6,10` · `docs-release-session.cjs:9` · `qa-ready.cjs:4` · `ship-guard-control.cjs:6`
@@ -90,10 +90,11 @@ e2e/contract/
 - `triple-crown-guide`의 유일한 check(`workflow-guide.cjs`)는 세 lib을 쓰지 않는다. `triple-superpowers`에는 `checks/`가 없다 → **M0 시점 lib 소비자는 `triple-gstack` 하나뿐**
 - 게이트 `command`는 `${GSD_CAP_DIR}/checks/<script>.cjs` 형태 5개(`capability.json:272,285,298,311,324`). **어느 게이트도 lib을 직접 실행하지 않는다** — 설계 §4.3 표의 "게이트 command가 `checks/lib/`을 참조" 행은 실측상 *게이트 스크립트의 `require`* 와 *SKILL.md의 직접 호출* 두 경로로 나타난다
 - `bin/triple-crown.cjs:264 validateBundledManifests()`가 `cap.version !== VERSION`을 강제한다 → **`VERSION`을 올리면 capability.json 3개도 같이 올려야 한다**
-- `bin/triple-crown.cjs:522`가 `if(opts.dryRun) { ...; return; }` — **프리플라이트(`:557`)보다 앞이라 `--dry-run`은 매니페스트 검사를 타지 않는다**
+- `bin/triple-crown.cjs:532`가 `if(opts.dryRun) { log('DRY RUN'); ...; return; }` — **프리플라이트(`:568`)보다 앞이라 `--dry-run`은 매니페스트 검사를 타지 않는다**
+- `install()`의 실제 배치: `:515` 함수 시작 · `:516` 프로젝트 존재 검사 · `:517~519` 프리릴리스 펜스 · `:520~522` `$HOME` 펜스 · `:523` `const actions=[`. **`:522`는 `$HOME` 펜스의 닫는 `}`이지 dry-run 반환이 아니다** — Task 5의 삽입 지점(`:522` 직후)과 dry-run 반환(`:532`)을 혼동하지 않는다
 - `bin/triple-crown.cjs`는 `crypto`를 require하지 않는다 (`fs`·`path`·`os`·`child_process`·`readline`만). 자체 `sha256` 헬퍼도 없다
 - 설치를 호출하는 테스트 6곳: `tests/run_installer_smoke.py:46,79` · `tests/run_npx_tarball_smoke.py:43` · `tests/run_bash_installer_smoke.py:31`(`install.sh` 경유) · `e2e/contract/home-root-refusal.test.cjs:20,26`(**L1**). `install.sh`는 `"$@"`로, `install.ps1`은 `@RemainingArgs`로 전달하므로 플래그가 그대로 넘어간다
-- `tests/run_installer_smoke.py:47`은 `.triple-crown/VERSION`을 `"0.6.4"`와 비교한다 — M-1 Task 7이 이 하드코딩을 제거한다
+- `tests/run_installer_smoke.py:48`은 `expected_version=(ROOT/"VERSION").read_text().strip()` — M-1 Task 7이 `"0.6.4"` 하드코딩을 **이미 제거했다.** M0에서 손댈 것 없음
 - `tests/validate_prototype.py`·`run_local_smoke.py`는 세 lib 파일 경로를 열거하지 않는다 → 이동해도 영향 없음
 - `npm pack --dry-run` 현재 산출 파일 44개. `package.json` `files`에 `capabilities` 포함 → `checks/lib/`는 자동으로 실린다
 - **`npm pack --dry-run`은 `prepack`을 실제로 실행한다** (probe 실측: 마커 파일 생성 확인). `--json` 출력은 원소 1개 배열이고 `[0].files`는 `{path,size,mode}` 배열이다
@@ -517,7 +518,8 @@ for f in *.cjs; do
   sed -i -E "s#require\((['\"])\./(repo-state-lib|evidence-store|resolve-phase-dir)\.cjs\1\)#require(\1./lib/\2.cjs\1)#g" "$f"
 done
 cd "$REPO_ROOT"
-grep -c "require(.\./lib/" capabilities/triple-gstack/checks/*.cjs | awk -F: '{s+=$2} END {print "바깥 참조 전환:", s}'
+# grep -c 는 매치된 **줄** 수라 한 줄에 두 참조가 있으면 과소 계수한다. occurrence 를 센다.
+grep -o "require(.\./lib/" capabilities/triple-gstack/checks/*.cjs | wc -l | sed 's/^/바깥 참조 전환: /'
 grep -rn "require(.\./\(repo-state-lib\|evidence-store\|resolve-phase-dir\)" capabilities/triple-gstack/checks/*.cjs || echo "OK 잔여 없음"
 grep -n "require('\./" capabilities/triple-gstack/checks/lib/*.cjs
 ```
@@ -585,7 +587,7 @@ git commit -m "refactor: promote shared libs to lib/ and vendor a per-capability
 
 **Interfaces:**
 - Consumes: Task 2의 `lib/` · `checks/lib/` 배치, `helpers/repo.cjs`의 `copyRepo`·`walkFiles`.
-- Produces: `npm run build:caps` = `node scripts/build-capabilities.cjs`. `node scripts/build-capabilities.cjs --check`는 **아무것도 쓰지 않고** 동기화 여부만 판정해 exit 0/1. 모듈로 require하면 `{ LIB_MAP, buildCapability }`를 준다. `LIB-HASH.json` 스키마: `{ "schema": 1, "generatedFrom": "lib/", "files": { "<name>.cjs": "<sha256hex>" } }`.
+- Produces: `npm run build:caps` = `node scripts/build-capabilities.cjs`. `node scripts/build-capabilities.cjs --check`는 **아무것도 쓰지 않고** 동기화 여부만 판정해 exit 0/1 (테스트가 이 무쓰기 계약을 단언한다 — `l1.yml`의 첫 스텝이라 트리를 더럽히면 뒤따르는 L1 결과가 오염된다). `--prune`은 표에 없는 사본 삭제를 **명시적으로** 허용한다 — 없으면 거부다. 모듈로 require하면 `{ LIB_MAP, planCapability, applyCapability }`를 준다. `LIB-HASH.json` 스키마: `{ "schema": 1, "generatedFrom": "lib/", "files": { "<name>.cjs": "<sha256hex>" } }`.
 
 - [ ] **Step 1: 실패하는 테스트 작성**
 
@@ -717,6 +719,93 @@ test('LIB_MAP covers every shared lib a bundled script or skill reaches for', ()
   }
   assert.deepStrictEqual(bad, [], 'LIB_MAP is incomplete');
 });
+
+test('an unmapped copy is refused by default and removed only with --prune', () => {
+  const repo = copyRepo('crew-unmapped-mapped-');
+  const dir = path.join(repo, 'capabilities', 'triple-gstack', 'checks', 'lib');
+  fs.writeFileSync(path.join(dir, 'stowaway.cjs'), 'module.exports = {};\n');
+
+  const refused = build(repo);
+  assert.notStrictEqual(refused.status, 0, 'an unmapped copy must not be deleted without --prune');
+  assert.match(refused.stderr, /not mapped in LIB_MAP/);
+  assert.ok(fs.existsSync(path.join(dir, 'stowaway.cjs')), 'the refusing run must leave the file alone');
+
+  const pruned = build(repo, ['--prune']);
+  assert.strictEqual(pruned.status, 0, pruned.stderr);
+  assert.match(pruned.stderr, /removed /);
+  assert.ok(!fs.existsSync(path.join(dir, 'stowaway.cjs')));
+});
+
+test('a non-.cjs stowaway is refused too — the filter is by record, not by extension', () => {
+  // require('./lib/helper.js') 는 CommonJS 에서 그대로 해석된다. 확장자로 거르면
+  // 빌드 · --check · 설치 프리플라이트 세 검사를 전부 지나 tarball 까지 실린다.
+  const repo = copyRepo('crew-stow-js-');
+  const dir = path.join(repo, 'capabilities', 'triple-gstack', 'checks', 'lib');
+  fs.writeFileSync(path.join(dir, 'helper.js'), 'module.exports = {};\n');
+  const r = build(repo);
+  assert.notStrictEqual(r.status, 0);
+  assert.match(r.stderr, /helper\.js/);
+});
+
+test('--check writes nothing, even on a drifted tree', () => {
+  // l1.yml 의 첫 스텝이 --check 다. 트리를 건드리면 뒤따르는 L1 결과가 오염된다.
+  const repo = copyRepo('crew-checkpure-');
+  fs.appendFileSync(canonical(repo, 'repo-state-lib.cjs'), '\n// drift\n');
+  const snap = () => walkFiles(path.join(repo, 'capabilities'), ['.cjs', '.json'])
+    .concat(walkFiles(path.join(repo, 'lib'), ['.cjs']))
+    .sort()
+    .map((p) => `${path.relative(repo, p)}:${fs.readFileSync(p).length}:${fs.statSync(p).mtimeMs}`);
+  const before = snap();
+  assert.notStrictEqual(build(repo, ['--check']).status, 0, '--check must report the drift');
+  assert.deepStrictEqual(snap(), before, '--check must not touch the tree');
+});
+
+test('a mixed tree — one normal edit plus one hand-edited copy — is left untouched (2-pass)', () => {
+  // 1-패스 구조라면 정상 수정분을 먼저 덮어쓴 뒤 손편집분에서 멈춘다. 사용자는
+  // "빌드 실패"를 보지만 트리는 반쯤 바뀐 상태고, 손편집을 거부해 증거를 지키겠다는
+  // 목적이 반쪽만 성립한다.
+  const repo = copyRepo('crew-mixed-');
+  fs.appendFileSync(canonical(repo, 'evidence-store.cjs'), '\n// normal edit\n');
+  const victim = copyOf(repo, 'triple-gstack', 'evidence-store.cjs');
+  const before = fs.readFileSync(victim);
+  fs.appendFileSync(copyOf(repo, 'triple-gstack', 'repo-state-lib.cjs'), '\n// hand edit\n');
+
+  const r = build(repo);
+  assert.notStrictEqual(r.status, 0, r.stdout);
+  assert.match(r.stderr, /hand-edited/);
+  assert.deepStrictEqual(fs.readFileSync(victim), before,
+    'a failed build must not have already applied the normal edit');
+});
+
+test('a missing canonical lib is reported, not silently skipped', () => {
+  const repo = copyRepo('crew-nocanon-');
+  fs.rmSync(canonical(repo, 'resolve-phase-dir.cjs'));
+  const r = build(repo);
+  assert.notStrictEqual(r.status, 0);
+  assert.match(r.stderr, /canonical lib\/resolve-phase-dir\.cjs is missing/);
+});
+
+test('a capability in LIB_MAP with no directory is reported', () => {
+  const repo = copyRepo('crew-nocapdir-');
+  fs.rmSync(path.join(repo, 'capabilities', 'triple-gstack'), { recursive: true });
+  const r = build(repo);
+  assert.notStrictEqual(r.status, 0);
+  assert.match(r.stderr, /capability directory missing/);
+});
+
+test('reordering LIB_MAP does not make the record look stale', () => {
+  // 자기 검토가 명시한 함정: JSON.stringify 비교면 키 순서가 바뀔 때 거짓 stale 이 난다.
+  const repo = copyRepo('crew-order-');
+  const tool = path.join(repo, 'scripts', 'build-capabilities.cjs');
+  const src = fs.readFileSync(tool, 'utf8');
+  const reversed = src.replace(
+    "'triple-gstack': ['repo-state-lib.cjs', 'evidence-store.cjs', 'resolve-phase-dir.cjs']",
+    "'triple-gstack': ['resolve-phase-dir.cjs', 'evidence-store.cjs', 'repo-state-lib.cjs']");
+  assert.notStrictEqual(reversed, src, 'the LIB_MAP literal must be substitutable');
+  fs.writeFileSync(tool, reversed);
+  const r = build(repo, ['--check']);
+  assert.strictEqual(r.status, 0, `key order must not affect the record comparison:\n${r.stderr}`);
+});
 ```
 
 - [ ] **Step 2: 테스트가 실패하는지 확인**
@@ -746,6 +835,13 @@ Expected: FAIL — `Cannot find module '../../scripts/build-capabilities.cjs'`.
 //   사본 없음                      복사 + 기록
 //   기록 없고 사본 == canonical     최초 도입(부트스트랩) — 기록만 새로 쓴다
 //   기록 없고 사본 != canonical     출처 증명 불가 — 거부
+//   표에 없는 사본                  거부. 삭제는 --prune 을 명시했을 때만
+//
+// **쓰기는 전수 판정이 끝난 뒤에만 한다(2-패스).** 한 파일이 정상 수정이고 다른 파일이
+// 손편집이면 1-패스 구조는 앞 파일을 이미 덮어쓴 뒤 뒤 파일에서 멈춘다 — 사용자는
+// "빌드 실패"를 보지만 트리는 반쯤 바뀐 상태고, 손편집을 거부해 증거를 지키겠다는
+// 목적이 반쪽만 성립한다. planCapability() 는 파일시스템을 읽기만 하고,
+// applyCapability() 는 **모든** capability 의 에러가 0 일 때만 불린다.
 
 const fs = require('fs');
 const path = require('path');
@@ -755,9 +851,14 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const LIB_DIR = path.join(REPO_ROOT, 'lib');
 const HASH_FILE = 'LIB-HASH.json';
 
-// 어느 capability 가 어느 공유 lib 을 쓰는가. M1b 가 capability 를 9개로 쪼갤 때
-// 이 표만 늘린다. 표에서 빠진 참조는 e2e/contract/lib-hash.test.cjs 의
-// LIB_MAP 완전성 테스트가 잡는다.
+// 어느 capability 가 어느 공유 lib 을 쓰는가.
+//
+// 이 표를 처음 건드리는 것은 M1b 가 아니라 **M1a** 다 — 설계 §5 표대로 M1a 가
+// triple-gstack 을 crew-quality 로 1:1 개명한다. 그 기계적 치환은 이 키,
+// capabilities/<id>/checks/lib/ 경로, 그리고 lib-hash.test.cjs 의 git restore 정규식을
+// **한 커밋에서 같이** 옮겨야 한다. M1b 는 그 뒤에 crew-quality 를 9개로 쪼개며 표를
+// 늘린다. 표에서 빠진 참조는 e2e/contract/lib-hash.test.cjs 의 LIB_MAP 완전성
+// 테스트가 잡는다.
 const LIB_MAP = {
   'triple-gstack': ['repo-state-lib.cjs', 'evidence-store.cjs', 'resolve-phase-dir.cjs'],
 };
@@ -779,19 +880,39 @@ function sameRecord(a, b) {
   const kb = Object.keys(b.files || {}).sort();
   return ka.length === kb.length && ka.every((k, i) => k === kb[i] && a.files[k] === b.files[k]);
 }
+// 사본 디렉터리에서 기록 파일 자신을 뺀 전부. **확장자로 거르지 않는다** —
+// `.cjs` 만 세면 checks/lib/helper.js 같은 밀항자가 빌드 · --check · 설치
+// 프리플라이트 세 검사를 전부 통과하고 tarball 에 실린다(package.json files 가
+// capabilities 를 싣는다). CommonJS 는 .js 도 require 로 해석하므로 한 줄이면 실행된다.
+function presentFiles(destDir) {
+  return fs.existsSync(destDir)
+    ? fs.readdirSync(destDir).filter((f) => f !== HASH_FILE).sort()
+    : [];
+}
+// 기대 기록은 **사본**을 다시 읽어 만든다. 기록의 의미를 "도구가 마지막에 심어 놓은
+// 사본의 해시"로 못 박아야 다음 회차의 copy == prev 판정이 성립한다. canonical 해시로
+// 채우면 기록과 사본의 대응이 끊겨 2회 연속 수정에서 빌드가 영구히 막힌다.
+function recordFromCopies(destDir, files) {
+  const next = { schema: 1, generatedFrom: 'lib/', files: {} };
+  for (const f of files) {
+    const p = path.join(destDir, f);
+    if (!fs.existsSync(p)) return null;
+    next.files[f] = sha256(fs.readFileSync(p));
+  }
+  return next;
+}
 
-function buildCapability(id, files, write) {
+// 1-패스. 파일시스템은 읽기만 한다. { errors, ops } 를 돌려준다.
+function planCapability(id, files, opts = {}) {
   const errors = [];
-  const actions = [];
+  const ops = [];                       // { kind:'copy'|'remove', src?, dst }
   const capDir = path.join(REPO_ROOT, 'capabilities', id);
-  if (!fs.existsSync(capDir)) return { errors: [`${id}: capability directory missing`], actions };
+  if (!fs.existsSync(capDir)) return { id, errors: [`${id}: capability directory missing`], ops };
 
   const destDir = path.join(capDir, 'checks', 'lib');
   const hashPath = path.join(destDir, HASH_FILE);
   const record = readJson(hashPath);
-  const present = fs.existsSync(destDir)
-    ? fs.readdirSync(destDir).filter((f) => f.endsWith('.cjs')).sort()
-    : [];
+  const present = presentFiles(destDir);
 
   // 기록이 없을 때. 매핑된 사본이 전부 canonical 과 바이트 동일하면 잃을 내용이 없으므로
   // 기록만 새로 쓴다 — Task 2 가 사본을 심고 이 도구가 처음 도는 부트스트랩이 정확히 이
@@ -806,9 +927,10 @@ function buildCapability(id, files, write) {
     });
     if (unprovable.length) {
       return {
+        id,
         errors: [`${id}: ${rel(destDir)}/ has copies but no ${HASH_FILE} — provenance unknown ` +
                  `for ${unprovable.join(', ')}; restore the record, or delete those copies and rebuild`],
-        actions,
+        ops,
       };
     }
   }
@@ -821,18 +943,15 @@ function buildCapability(id, files, write) {
     const prev = record && record.files ? record.files[f] : undefined;
 
     if (!fs.existsSync(dst)) {
-      if (!write) { errors.push(`${id}: ${rel(dst)} is missing — run \`npm run build:caps\``); continue; }
-      fs.mkdirSync(destDir, { recursive: true });
-      fs.copyFileSync(src, dst);
-      actions.push(`created ${rel(dst)}`);
+      if (opts.check) { errors.push(`${id}: ${rel(dst)} is missing — run \`npm run build:caps\``); continue; }
+      ops.push({ kind: 'copy', src, dst });
     } else {
       const copyHash = sha256(fs.readFileSync(dst));
       if (copyHash === newHash) {
         // 최신.
       } else if (prev !== undefined && copyHash === prev) {
-        if (!write) { errors.push(`${id}: lib/${f} changed since the last build — run \`npm run build:caps\``); continue; }
-        fs.copyFileSync(src, dst);
-        actions.push(`updated ${rel(dst)}`);
+        if (opts.check) { errors.push(`${id}: lib/${f} changed since the last build — run \`npm run build:caps\``); continue; }
+        ops.push({ kind: 'copy', src, dst });
       } else {
         errors.push(
           `${id}: ${rel(dst)} was hand-edited\n` +
@@ -840,55 +959,81 @@ function buildCapability(id, files, write) {
           `last-generated=${prev === undefined ? '<unrecorded>' : prev.slice(0, 12)}\n` +
           `      공유 lib 의 원본은 lib/${f} 하나다. 사본을 되돌린 뒤 다시 빌드한다:\n` +
           `        git restore ${rel(dst)} && npm run build:caps`);
-        continue;
       }
     }
   }
 
-  // 표에서 빠진 사본은 유령이다 — M1b 에서 lib 배분이 바뀔 때 남지 않도록 지운다.
+  // 표에 없는 사본. **기본은 거부다.** 바로 위에서 손편집 사본은 덮어쓰기를 거부하면서
+  // 여기서 언매핑 사본을 조용히 지우면, 같은 부류(사람이 넣은 파일)에 정반대 처우가 된다.
+  // 삭제는 의도를 명시한 --prune 에서만 일어난다 — M1b 가 lib 배분을 바꿀 때 쓴다.
   for (const f of present) {
     if (files.includes(f)) continue;
     const stale = path.join(destDir, f);
-    if (!write) { errors.push(`${id}: ${rel(stale)} is no longer mapped — run \`npm run build:caps\``); continue; }
-    fs.rmSync(stale);
-    actions.push(`removed ${rel(stale)}`);
+    if (opts.prune && !opts.check) { ops.push({ kind: 'remove', dst: stale }); continue; }
+    errors.push(`${id}: ${rel(stale)} is not mapped in LIB_MAP['${id}'] — ` +
+                `delete it yourself, or run \`npm run build:caps -- --prune\` to let the tool remove it`);
   }
 
-  if (errors.length) return { errors, actions };
-
-  // 기록은 **사본**을 다시 읽어 채운다. 기록의 의미를 "도구가 마지막에 심어 놓은 사본의
-  // 해시"로 못 박아야 다음 회차의 copy == prev 판정이 성립한다.
-  const next = { schema: 1, generatedFrom: 'lib/', files: {} };
-  for (const f of files) next.files[f] = sha256(fs.readFileSync(path.join(destDir, f)));
-  if (!sameRecord(readJson(hashPath), next)) {
-    if (!write) errors.push(`${id}: ${rel(hashPath)} is stale — run \`npm run build:caps\``);
-    else { writeJson(hashPath, next); actions.push(`recorded ${rel(hashPath)}`); }
+  // --check 는 기록의 최신성까지 본다. 사본이 이미 최신인 상태에서만 여기에 닿으므로
+  // 기대 기록은 지금 사본에서 그대로 유도된다. 쓰지 않는다.
+  if (opts.check && !errors.length) {
+    const next = recordFromCopies(destDir, files);
+    if (next && !sameRecord(record, next)) {
+      errors.push(`${id}: ${rel(hashPath)} is stale — run \`npm run build:caps\``);
+    }
   }
-  return { errors, actions };
+
+  return { id, errors, ops, destDir, hashPath, files };
+}
+
+// 2-패스. **모든** capability 의 판정이 에러 0 일 때만 불린다.
+function applyCapability(plan) {
+  const actions = [];
+  for (const op of plan.ops) {
+    if (op.kind === 'copy') {
+      fs.mkdirSync(path.dirname(op.dst), { recursive: true });
+      const created = !fs.existsSync(op.dst);
+      fs.copyFileSync(op.src, op.dst);
+      actions.push(`${created ? 'created' : 'updated'} ${rel(op.dst)}`);
+    } else {
+      fs.rmSync(op.dst);
+      actions.push(`removed ${rel(op.dst)}`);
+    }
+  }
+  const next = recordFromCopies(plan.destDir, plan.files);
+  if (next && !sameRecord(readJson(plan.hashPath), next)) {
+    writeJson(plan.hashPath, next);
+    actions.push(`recorded ${rel(plan.hashPath)}`);
+  }
+  return actions;
 }
 
 // 사람이 읽는 출력은 전부 stderr 로 간다. 이 도구는 prepack 으로도 도는데, 그때
 // stdout 은 `npm pack --json` 의 것이다 — 한 줄이라도 섞으면 JSON 파싱이 깨진다.
 // (실측: stdout 에 쓰면 pack 계약 테스트가 `Unexpected token 'b', "build-capa"...` 로 죽는다.)
 function main(argv) {
-  const check = argv.includes('--check');
+  const opts = { check: argv.includes('--check'), prune: argv.includes('--prune') };
+  const plans = [];
   const errors = [];
-  const actions = [];
   for (const [id, files] of Object.entries(LIB_MAP)) {
-    const r = buildCapability(id, files, !check);
-    errors.push(...r.errors);
-    actions.push(...r.actions);
+    const plan = planCapability(id, files, opts);
+    plans.push(plan);
+    errors.push(...plan.errors);
+  }
+  const actions = [];
+  if (!errors.length && !opts.check) {
+    for (const plan of plans) if (plan.destDir) actions.push(...applyCapability(plan));
   }
   for (const a of actions) process.stderr.write(`build-capabilities: ${a}\n`);
   if (errors.length) {
-    process.stderr.write(`build-capabilities: ${check ? 'shared lib copies are out of sync' : 'build failed'}\n`);
+    process.stderr.write(`build-capabilities: ${opts.check ? 'shared lib copies are out of sync' : 'build failed'}\n`);
     for (const e of errors) process.stderr.write(`  - ${e}\n`);
     process.exit(1);
   }
-  process.stderr.write(`build-capabilities: ${check ? 'in sync' : 'ok'}\n`);
+  process.stderr.write(`build-capabilities: ${opts.check ? 'in sync' : 'ok'}\n`);
 }
 
-module.exports = { LIB_MAP, buildCapability };
+module.exports = { LIB_MAP, planCapability, applyCapability };
 if (require.main === module) main(process.argv.slice(2));
 ```
 
@@ -909,6 +1054,11 @@ node scripts/build-capabilities.cjs --check
 ```
 
 Expected: 첫 실행이 `recorded capabilities/triple-gstack/checks/lib/LIB-HASH.json` + `ok`. `LIB-HASH.json`에 세 파일의 sha256. `--check`는 `in sync` + exit 0.
+
+> **표에 없는 사본은 기본 거부다.** M1b가 lib 배분을 바꿔 사본을 실제로 지워야 할 때만
+> `npm run build:caps -- --prune`을 쓴다. 손편집 사본은 덮어쓰기를 거부하면서 언매핑
+> 사본은 조용히 지우면 같은 부류(사람이 넣은 파일)에 정반대 처우가 되므로, 삭제는
+> 의도를 명시한 경로에서만 일어난다.
 
 - [ ] **Step 5: `prerelease-fence.test.cjs`의 중복 복사 헬퍼 제거**
 
@@ -936,7 +1086,7 @@ Expected: `copyPackage` 잔여 0건, 테스트 PASS.
 - [ ] **Step 6: 테스트가 통과하는지 확인**
 
 Run: `node --test e2e/contract/lib-hash.test.cjs`
-Expected: PASS 9건.
+Expected: PASS **16건**.
 
 - [ ] **Step 7: 전체 회귀 확인**
 
@@ -950,14 +1100,53 @@ git status --short
 
 Expected: L1 전부 PASS. `git status --short`에 `capabilities/triple-gstack/checks/lib/LIB-HASH.json`이 신규로 뜬다 — 파괴적 실험은 임시 복사본에서만 했으므로 원본에는 그 외 변경이 없어야 한다.
 
-- [ ] **Step 8: 커밋**
+- [ ] **Step 8: 설계서 §4.2 판정표를 구현과 맞춘다**
+
+구현이 설계서를 두 곳에서 넘어섰다. 안 고치면 M1b 실행자가 §4.2를 상위 규칙으로 읽고 부트스트랩 예외를 "버그"로 오인해 되돌린다 — 그럼 또 최초 빌드가 막힌다. 계획서 자기 검토에만 적어 두는 것으로는 부족하다(1500줄짜리 문서 맨 끝 불릿 하나다).
+
+`docs/V0.7-IMPLEMENTATION-DESIGN.md` §4.2의 판정 블록 마지막 줄을 세 줄로 늘린다.
+
+Before:
+
+```
+LIB-HASH 없는데 사본 존재       → 출처 증명 불가. non-zero exit
+```
+
+After:
+
+```
+LIB-HASH 없고 사본 == canonical → 최초 도입(부트스트랩). 기록만 새로 쓴다
+LIB-HASH 없고 사본 != canonical → 출처 증명 불가. non-zero exit
+표에 없는 사본                  → non-zero exit. 삭제는 --prune 명시 시에만
+```
+
+그 아래 한 줄 덧붙인다:
+
+```
+부트스트랩 행이 필요한 이유: M0 Task 2 가 사본을 심고 Task 3 이 첫 빌드를 도는 순간이
+정확히 "사본은 있는데 기록은 없는" 상태다. 무조건 거부하면 최초 빌드가 영영 불가능하다.
+```
+
+```bash
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+sed -n '/^LIB-HASH 없/,+2p' docs/V0.7-IMPLEMENTATION-DESIGN.md
+grep -c 'prune' docs/V0.7-IMPLEMENTATION-DESIGN.md
+```
+
+Expected: 세 줄이 보이고 `prune`이 1건 이상.
+
+- [ ] **Step 9: 커밋**
 
 ```bash
 git add scripts/build-capabilities.cjs package.json \
         capabilities/triple-gstack/checks/lib/LIB-HASH.json \
-        e2e/contract/lib-hash.test.cjs e2e/contract/prerelease-fence.test.cjs
+        e2e/contract/lib-hash.test.cjs e2e/contract/prerelease-fence.test.cjs \
+        docs/V0.7-IMPLEMENTATION-DESIGN.md
 git commit -m "feat: add build-capabilities with 3-way shared lib drift detection"
 ```
+
+> 설계 갱신을 구현과 **같은 커밋**에 둔다. 나중에 "왜 문서와 코드가 다르지"를 추적할 필요가 없어진다.
 
 ---
 
@@ -1024,11 +1213,28 @@ test('the packed tarball carries every lib copy and its hash record (§4.4 row 6
     }
   }
 
-  // canonical 은 일부러 싣지 않는다. 배포본에 원본이 같이 들어가면 설치 시점 검사가
-  // "사본 대 원본"으로 흘러갈 여지가 생기고, 그러면 tarball 안에서 둘 다 고쳐진
-  // 경우를 못 잡는다. 기록(LIB-HASH.json) 대조만이 변조를 잡는다.
+  // canonical 은 일부러 싣지 않는다. **이유는 변조 저항이 아니다** — 기록(LIB-HASH.json)도
+  // 같은 tarball 안에 있으므로 사본과 기록을 둘 다 고치면 그대로 통과하고, 그건 원본을
+  // 같이 싣는 경우와 똑같은 한계다. 대조가 실제로 주는 성질은 (1) 사고성 drift 검출,
+  // (2) 사본만 고치고 기록은 안 고친 한쪽 편집 검출, 이 둘뿐이다.
+  // 안 싣는 진짜 이유는 단일 소스 규율이다: 배포본에 원본이 같이 있으면 설치 시점 검사가
+  // "사본 대 원본"으로 흘러갈 여지가 생기고, 그 순간 배포본만 보고는 어느 쪽이 canonical
+  // 인지 알 수 없게 된다. 배포 크기가 주는 것은 부수 효과다.
   assert.ok(!files.some((f) => f === 'lib' || f.startsWith('lib/')),
     'canonical lib/ must not be published');
+});
+
+test('a hand-edited copy blocks npm pack — prepack is a gate, not a formality', () => {
+  // 실측: prepack 이 non-zero 로 끝나면 npm pack 은 exit 1 이고 --json 출력도 배열이
+  // 아니라 {"error":…} 가 된다. 누가 prepack 을 "… || true" 로 바꾸면 손편집된 사본이
+  // 그대로 배포되는데, 그 회귀를 잡는 것은 이 단언뿐이다.
+  const repo = copyRepo('crew-pack-blocked-');
+  fs.appendFileSync(
+    path.join(repo, 'capabilities', 'triple-gstack', 'checks', 'lib', 'repo-state-lib.cjs'),
+    '\n// hand edit\n');
+  const r = pack(repo);
+  assert.notStrictEqual(r.status, 0, 'npm pack must not succeed when prepack refuses');
+  assert.match(`${r.stdout}${r.stderr}`, /hand-edited/);
 });
 ```
 
@@ -1047,6 +1253,14 @@ Expected: 첫 테스트 FAIL — `prepack did not refresh the copies` (아직 `p
 
 > `prepack`은 `npm pack`·`npm publish`·git 의존성 설치 시 실행된다. 외부 의존성·네트워크를 쓰지 않고 동기화 상태면 아무것도 쓰지 않으므로, `npx github:ungkey/triple-crown` 경로에서도 안전하게 no-op이다.
 
+같은 `scripts`에 **배포 청결 게이트**도 넣는다:
+
+```json
+    "prepublishOnly": "node scripts/build-capabilities.cjs --check && node -e \"const s=require('child_process').execSync('git status --porcelain',{encoding:'utf8'});if(s.trim())throw new Error('refusing to publish from a dirty tree:\\n'+s)\"",
+```
+
+> **`prepublishOnly`는 `prepack`보다 먼저 돈다** (npm publish 생명주기: `prepublishOnly` → `prepack` → `prepare` → `publish`). 순서가 핵심이다 — `prepack`이 사본을 조용히 갱신해 버리기 **전에** "커밋된 트리가 이미 동기화 상태였는가"를 묻는 것이 이 게이트의 요점이다. 안 걸면 리뷰도 커밋도 안 된 생성물이 tarball에 실릴 수 있다. `npm pack`에는 걸리지 않으므로 개발 중 pack 은 여전히 자유롭다.
+
 - [ ] **Step 4: 테스트가 통과하는지 확인**
 
 ```bash
@@ -1056,7 +1270,7 @@ node --test e2e/contract/pack-contract.test.cjs
 npm pack --dry-run 2>&1 | grep 'npm notice' | grep -c 'checks/lib'
 ```
 
-Expected: PASS 2건. `grep -c`가 **4** (사본 3 + `LIB-HASH.json`).
+Expected: PASS **3건**. `grep -c`가 **4** (사본 3 + `LIB-HASH.json`).
 
 > `npm notice` 필터를 거치는 이유: `prepack` 출력도 `2>&1` 로 합쳐지는데 그 줄에도
 > `checks/lib` 가 들어간다. 실측상 사본이 낡은 상태에서 세면 4가 아니라 6이 나온다.
@@ -1138,12 +1352,49 @@ test('a missing recorded file is refused', () => {
   assert.notStrictEqual(r.status, 0);
   assert.match(r.stderr, /recorded but missing/);
 });
+
+test('an empty LIB-HASH record is refused rather than passing vacuously', () => {
+  // 기록이 비고 사본도 없으면 "기록된 것 검사"와 "기록에 없는 것 검사" 두 루프가 모두
+  // 공회전한다 — 사본을 전부 지운 패키지가 통과하고, 게이트가 사용자 세션에서 죽는다.
+  const pkg = copyRepo('crew-emptyrec-');
+  const dir = libDir(pkg);
+  for (const f of fs.readdirSync(dir)) if (f !== 'LIB-HASH.json') fs.rmSync(path.join(dir, f));
+  fs.writeFileSync(path.join(dir, 'LIB-HASH.json'),
+    JSON.stringify({ schema: 1, generatedFrom: 'lib/', files: {} }, null, 2) + '\n');
+  const r = install(pkg);
+  assert.notStrictEqual(r.status, 0, 'an empty record must not verify');
+  assert.match(r.stderr, /records no files/);
+});
+
+test('a malformed record — bad schema, path key, or hash — is refused', () => {
+  const H = 'a'.repeat(64);
+  const cases = [
+    [{ schema: 2, generatedFrom: 'lib/', files: { 'repo-state-lib.cjs': H } }, /schema-1/],
+    [{ schema: 1, generatedFrom: 'lib/', files: { '../../bin/triple-crown.cjs': H } }, /not a plain file name/],
+    [{ schema: 1, generatedFrom: 'lib/', files: { 'repo-state-lib.cjs': 'nothex' } }, /malformed sha256/],
+  ];
+  for (const [record, re] of cases) {
+    const pkg = copyRepo('crew-badrec-');
+    fs.writeFileSync(path.join(libDir(pkg), 'LIB-HASH.json'), JSON.stringify(record, null, 2) + '\n');
+    const r = install(pkg);
+    assert.notStrictEqual(r.status, 0, `must refuse: ${JSON.stringify(record)}`);
+    assert.match(r.stderr, re);
+  }
+});
+
+test('a checks/lib without a readable LIB-HASH.json is refused', () => {
+  const pkg = copyRepo('crew-norec-');
+  fs.writeFileSync(path.join(libDir(pkg), 'LIB-HASH.json'), 'not json\n');
+  const r = install(pkg);
+  assert.notStrictEqual(r.status, 0);
+  assert.match(r.stderr, /without a readable schema-1/);
+});
 ```
 
 - [ ] **Step 2: 테스트가 실패하는지 확인**
 
 Run: `node --test e2e/contract/bundled-lib-integrity.test.cjs`
-Expected: 1번 PASS, 2~4번 FAIL — 변조·추가·삭제가 전부 `DRY RUN`으로 통과한다. 현재 프리플라이트가 `--dry-run` 반환 뒤에 있어 아예 돌지 않는다는 증명이다.
+Expected: 1번 PASS, 나머지 6건 FAIL — 변조·추가·삭제·빈 기록·깨진 기록이 전부 `DRY RUN`으로 통과한다. 현재 프리플라이트가 `--dry-run` 반환 뒤에 있어 아예 돌지 않는다는 증명이다.
 
 - [ ] **Step 3: `crypto` require 추가**
 
@@ -1159,25 +1410,56 @@ const crypto = require('crypto');
 
 ```js
   // 배포본에는 canonical lib/ 이 없다(package.json files 참조). 사본을 신뢰할 근거는
-  // 함께 실린 LIB-HASH.json 하나뿐이므로 그 기록과만 대조한다 — 원본과 비교하는 형태로
-  // 바꾸면 tarball 안에서 둘 다 고쳐진 경우를 못 잡는다.
-  for(const id of CAPABILITIES) {
-    const dir=path.join(PACKAGE_ROOT,'capabilities',id,'checks','lib');
+  // 함께 실린 LIB-HASH.json 하나뿐이므로 그 기록과만 대조한다.
+  //
+  // 이 대조가 실제로 주는 성질은 두 가지다: (1) 사고성 drift 검출, (2) 사본만 고치고
+  // 기록은 안 고친 한쪽 편집 검출. 기록도 같은 tarball 안에 있으므로 **둘 다 고친 경우는
+  // 잡지 못한다** — canonical 을 같이 싣는 경우와 동일한 한계다. lib/ 을 안 싣는 이유는
+  // 변조 저항이 아니라 단일 소스 규율이다.
+  //
+  // 검사 대상은 CAPABILITIES 가 아니라 capabilities/ 디렉터리 그 자체다. 설치 목록과
+  // 검사 목록이 갈라지면 M1b 가 capability 를 늘릴 때 한쪽에만 넣어 그 사본이 검사 없이
+  // 배포되는 사일런트 구멍이 생긴다. "배포본에 실제로 있는 것"을 검사 대상의 정의로 삼는다.
+  const HEX64=/^[0-9a-f]{64}$/;
+  const capsRoot=path.join(PACKAGE_ROOT,'capabilities');
+  for(const id of (exists(capsRoot)?fs.readdirSync(capsRoot):[])) {
+    const dir=path.join(capsRoot,id,'checks','lib');
     if(!exists(dir)) continue;                    // 이 capability 는 공유 lib 을 쓰지 않는다
     const record=readJson(path.join(dir,'LIB-HASH.json'));
-    if(!record || !record.files) {
-      errors.push(`${id}: checks/lib exists without a readable LIB-HASH.json`);
+    if(!record || record.schema!==1 || record.generatedFrom!=='lib/'
+       || !record.files || typeof record.files!=='object' || Array.isArray(record.files)) {
+      errors.push(`${id}: checks/lib exists without a readable schema-1 LIB-HASH.json`);
       continue;
     }
     const recorded=Object.keys(record.files);
+    // 빈 기록은 정의상 모순이다. checks/lib/ 이 있다는 것 자체가 "이 capability 는 공유
+    // lib 을 쓴다"는 선언인데, 기록이 비면 아래 두 루프가 모두 공회전해 **사본을 전부
+    // 지운 패키지가 그대로 통과한다.** 그러면 게이트가 사용자 세션 한가운데서
+    // Cannot find module 로 죽는다 — 설치 시점에 잡을 수 있었던 것을 가장 나쁜 순간으로 미룬다.
+    if(!recorded.length) {
+      errors.push(`${id}: LIB-HASH.json records no files — a checks/lib with nothing recorded cannot be verified`);
+      continue;
+    }
     for(const f of recorded) {
+      // 기록 파일은 신뢰 경계다. 키를 그대로 join 하면 '../../bin/x.cjs' 같은 값이 패키지
+      // 밖을 가리킬 수 있다. 단순 파일명만 허용한다.
+      if(!f || f!==path.basename(f) || f==='.' || f==='..') {
+        errors.push(`${id}: LIB-HASH.json key ${JSON.stringify(f)} is not a plain file name`);
+        continue;
+      }
+      if(!HEX64.test(String(record.files[f]))) {
+        errors.push(`${id}: checks/lib/${f} has a malformed sha256 in LIB-HASH.json`);
+        continue;
+      }
       const p=path.join(dir,f);
       if(!exists(p)) { errors.push(`${id}: checks/lib/${f} is recorded but missing`); continue; }
       const got=crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
       if(got!==record.files[f]) errors.push(`${id}: checks/lib/${f} sha256 mismatch (tampered or stale build)`);
     }
+    // 확장자로 거르지 않는다 — .js/.mjs/.json 밀항자도 require 로 실행된다.
+    // 기록 파일 자신만 예외다.
     for(const f of fs.readdirSync(dir)) {
-      if(f.endsWith('.cjs') && !recorded.includes(f)) {
+      if(f!=='LIB-HASH.json' && !recorded.includes(f)) {
         errors.push(`${id}: checks/lib/${f} is not recorded in LIB-HASH.json`);
       }
     }
@@ -1235,7 +1517,7 @@ node --test e2e/contract/bundled-lib-integrity.test.cjs
 npm run test:l1
 ```
 
-Expected: 4건 PASS, L1 전부 PASS.
+Expected: **7건** PASS, L1 전부 PASS.
 
 - [ ] **Step 7: 전체 회귀 확인**
 
@@ -1252,10 +1534,69 @@ node e2e/doctor.cjs 2>&1 | tail -8 || true
 
 Expected: 파이썬 스모크 전부 PASS. `doctor.cjs`의 `bundle-runtime-compat` 행이 `PASS` (사본 검사가 합쳐졌으므로 실패하면 여기서도 드러난다).
 
-- [ ] **Step 8: 커밋**
+- [ ] **Step 8: 설치된 트리에서 소비자가 실제로 도는지 확인 (신규 스모크)**
+
+M0의 핵심 주장은 "사본을 capability 안에 심어 두면 **설치 후에도** `require`가 해석된다"다. 그런데 여기까지의 테스트 중 그걸 실행으로 증명하는 것이 없다 — `pack-contract`는 파일 목록만 읽고, `bundled-lib-integrity`는 `--dry-run`이라 아무것도 쓰지 않으며, `run_npx_tarball_smoke.py`는 설치만 하고 공유 lib 소비자를 한 번도 실행하지 않는다. 상대경로나 패키징 레이아웃이 한 칸 어긋나도 신규 L1이 전부 초록이 된다.
+
+L1이 아니라 파이썬 스모크에 둔다 — 실제 설치를 하므로 "수 초 · 비용 0" 기준을 벗어난다.
+
+`tests/run_installed_lib_smoke.py` (신규):
+
+```python
+#!/usr/bin/env python3
+"""설치된 트리에서 공유 lib 소비자가 실제로 로드되는지 확인한다.
+
+L1 lib-layout 은 저장소 트리에서 require 경로를 **정적으로** 검사한다. 배포·설치 경로에서
+사본이 따라가는지, 그 위치에서 형제 참조까지 해석되는지는 실행해 봐야만 알 수 있다.
+"""
+import os, subprocess, tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+CLI = ROOT / "bin" / "triple-crown.cjs"
+
+with tempfile.TemporaryDirectory() as td:
+    home = Path(td) / "home"; project = Path(td) / "proj"
+    home.mkdir(); project.mkdir()
+    # main 은 재구성 기간 내내 프리릴리스 VERSION 을 달고 있다(설계 §4.5 계층 2).
+    # 이 스모크는 "배포 가능한가"가 아니라 "설치 동작이 온전한가"를 보므로 펜스를 명시적으로 연다.
+    env = dict(os.environ, HOME=str(home), TRIPLE_CROWN_ALLOW_UNSUPPORTED_NODE="1")
+    p = subprocess.run(
+        ["node", str(CLI), "install", "--project", str(project),
+         "--yes", "--no-bootstrap", "--no-ship-guard", "--allow-prerelease"],
+        cwd=str(ROOT), env=env, capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr
+
+    hits = sorted(Path(td).rglob("checks/lib/repo-state-lib.cjs"))
+    assert hits, "no installed copy of checks/lib/repo-state-lib.cjs found under the install roots"
+    for lib in hits:
+        # evidence-store 는 형제 ./repo-state-lib.cjs 를 require 한다 — 둘 다 로드해야
+        # "사본 디렉터리 안에서 형제 참조가 해석된다"가 증명된다.
+        r = subprocess.run(
+            ["node", "-e",
+             "require(process.argv[1]);require(process.argv[2]);console.log('ok')",
+             str(lib), str(lib.parent / "evidence-store.cjs")],
+            capture_output=True, text=True)
+        assert r.returncode == 0 and "ok" in r.stdout, f"{lib}: {r.stderr}"
+
+print("PASS installed-shared-lib-require")
+```
 
 ```bash
-git add bin/triple-crown.cjs e2e/contract/bundled-lib-integrity.test.cjs
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+python tests/run_installed_lib_smoke.py
+```
+
+Expected: `PASS installed-shared-lib-require`.
+
+> **단언이 실제로 무는지 먼저 본다.** 임시 복사본에서 `capabilities/triple-gstack/checks/lib/`를 지우고 한 번 돌려 `no installed copy … found`로 죽는 것을 확인한 뒤 원본에서 GREEN을 본다. 안 그러면 "설치가 원래 사본을 안 만든다"와 "만든다"가 구분되지 않는다.
+
+- [ ] **Step 9: 커밋**
+
+```bash
+git add bin/triple-crown.cjs e2e/contract/bundled-lib-integrity.test.cjs \
+        tests/run_installed_lib_smoke.py
 git commit -m "feat: verify bundled shared lib copies against LIB-HASH at preflight"
 ```
 
@@ -1263,7 +1604,9 @@ git commit -m "feat: verify bundled shared lib copies against LIB-HASH at prefli
 
 ### Task 6: CI + `npm test` 통합
 
-M-1 자기 검토가 남긴 두 구멍을 닫는다 — **CI가 없어 L1 green이 수작업 규율**이고, **`npm test`가 L1도 npx tarball 스모크도 부르지 않는다**. Windows는 커버리지가 0이므로 **보이게는 하되 막지는 않는다.**
+M-1 자기 검토가 남긴 두 구멍을 닫는다 — **CI가 없어 L1 green이 수작업 규율**이고, **`npm test`가 L1도 npx tarball 스모크도 부르지 않는다**.
+
+> **Windows 잡은 넣지 않는다.** 초안은 `continue-on-error`로 "보이게는 하되 막지는 않는다"였다. 영구적으로 실패해도 되는 잡은 커버리지가 아니라 상시 빨간불이고, 상시 빨간불이 하나 있는 CI는 사람이 전체를 대충 보게 만든다 — L1 게이트 자체의 신호 가치를 깎는다. 대신 **Windows L1 커버리지 0**을 아래 "범위 밖으로 남긴 것"에 명시 항목으로 남긴다. M1a가 경로 가정(구분자·임시 HOME·심볼릭 링크)을 정리할 때 blocking 잡으로 넣는다.
 
 **Files:**
 - Create: `.github/workflows/l1.yml`
@@ -1281,8 +1624,9 @@ M-1 자기 검토가 남긴 두 구멍을 닫는다 — **CI가 없어 L1 green�
   "scripts": {
     "build:caps": "node scripts/build-capabilities.cjs",
     "prepack": "node scripts/build-capabilities.cjs",
+    "prepublishOnly": "node scripts/build-capabilities.cjs --check && node -e \"const s=require('child_process').execSync('git status --porcelain',{encoding:'utf8'});if(s.trim())throw new Error('refusing to publish from a dirty tree:\\n'+s)\"",
     "test:l1": "node -e \"const n=require('fs').readdirSync('e2e/contract',{recursive:true}).filter(f=>String(f).endsWith('.test.cjs')).length;if(!n)throw new Error('L1 gate found no *.test.cjs under e2e/contract - refusing to report a vacuous pass')\" && node --test \"e2e/contract/**/*.test.cjs\"",
-    "test": "npm run test:l1 && python tests/run_installer_smoke.py && python tests/run_v061_l0.py",
+    "test": "npm run test:l1 && python tests/run_installer_smoke.py && python tests/run_installed_lib_smoke.py && python tests/run_v061_l0.py",
     "test:pack": "npm pack && python tests/run_npx_tarball_smoke.py",
     "pack:check": "npm pack --dry-run"
   }
@@ -1316,15 +1660,8 @@ on:
 
 jobs:
   contract:
-    name: contract (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    # L1 계약 테스트는 POSIX 가정 위에서 작성됐고 Windows 커버리지는 아직 0이다.
-    # 막지는 않되 결과는 보이게 둔다 — 조용히 빼면 영영 고쳐지지 않는다. M1a 에서 정리한다.
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
+    name: contract (ubuntu)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -1348,6 +1685,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python tests/run_installer_smoke.py
+      - run: python tests/run_installed_lib_smoke.py
       - run: python tests/run_bash_installer_smoke.py
       - run: python tests/run_v061_l0.py
       - run: python tests/run_local_smoke.py
@@ -1485,7 +1823,7 @@ Expected: `v0.7.0-m0`이 목록에 있고 HEAD에 붙어 있다.
 - **lib 내부 참조 2곳은 건드리면 안 된다.** `evidence-store.cjs:10`·`resolve-phase-dir.cjs:6`의 `./repo-state-lib.cjs`는 셋이 함께 이동하므로 형제 참조 그대로다. Task 2 Step 4의 `sed`는 `checks/*.cjs`만 훑고, 같은 Step이 내부 참조가 안 바뀌었음을 명시적으로 확인한다.
 - **`prev`를 안 쓰면 canonical 2회 수정에서 빌드가 영구히 막힌다.** 설계 §4.2가 이미 지적한 지점이지만, 구현에서 `next.files`를 canonical 해시로 채우면 같은 함정이 되살아난다 — 기록의 의미가 "canonical의 해시"가 되어 사본과의 대응이 끊긴다. 그래서 기록은 **사본을 다시 읽어** 채운다.
 - **키 순서에 기댄 기록 비교는 거짓 stale을 만든다.** `LIB_MAP` 배열 순서가 바뀌면 `JSON.stringify` 비교가 어긋난다. `sameRecord()`가 정렬된 키로 비교한다.
-- **CI를 넣어도 push 전까지는 안 돈다.** Task 6 Step 4에 명시했다. Windows는 커버리지가 0이라 `continue-on-error`로 두었다 — 잡을 수 없는 실패로 파이프라인을 빨갛게 만들면 곧 아무도 안 본다. 조용히 빼면 영영 안 고쳐지므로 결과는 보이게 남긴다.
+- **CI를 넣어도 push 전까지는 안 돈다.** Task 6 Step 4에 명시했다. Windows 잡은 **넣지 않는다** — 초안의 `continue-on-error`는 커버리지가 아니라 상시 빨간불이고, 상시 빨간불 하나가 CI 전체의 신호 가치를 깎는다. 커버리지 0이라는 사실은 아래 범위 밖 항목으로 명시해 사라지지 않게 한다. (리뷰 D15에서 뒤집힌 판단이다.)
 - **`npm ci`를 쓰지 않는다.** 외부 의존성이 0개라 lockfile이 없고 `npm ci`는 즉시 실패한다. 워크플로에 설치 단계 자체를 두지 않았다.
 - **`npm pack --dry-run`이 `prepack`을 실행한다는 것은 추측이 아니라 실측이다.** probe로 마커 파일 생성을 확인했고 `--json` 출력 형태(`[0].files[].path`)도 같이 확인했다. 이게 거짓이면 Task 4의 §4.4 3행 테스트가 무의미해진다.
 - **pack 계약 테스트만 느리다.** 저장소 복사 2회 + `npm pack` 2회라 L1의 "수 초" 기준에서 벗어난다. 별도 파일(`pack-contract.test.cjs`)로 떼어 두어 필요하면 빼기 쉽게 했다. 지금은 뺄 이유가 없어 빼지 않는다.
@@ -1494,11 +1832,72 @@ Expected: `v0.7.0-m0`이 목록에 있고 HEAD에 붙어 있다.
 - **실행 검증이 잡은 결함 3 — `prepack` 출력이 `npm pack --json`을 오염시킨다.** 빌드 도구가 stdout에 한 줄이라도 쓰면 pack 계약 테스트가 `Unexpected token 'b', "build-capa"...`로 죽는다. 도구 출력을 전부 stderr로 옮겼다. 같은 이유로 셸에서 세는 `grep -c 'checks/lib'`도 `npm notice` 필터를 거친다 — 안 거치면 사본이 낡았을 때 4 대신 6이 나온다.
 - **검증 방법.** `git archive HEAD`로 임시 트리를 뜨고 Task 2의 `sed`·`mv`를 그대로 돌린 뒤, 계획서의 코드 블록 6개를 추출해 배치하고 실행했다. 결과: **신규 L1 17/17 PASS**(lib-hash 9 · lib-layout 4 · pack-contract 2 · version-consistency 2). 그 뒤 중복이던 `version-consistency` 두 번째 테스트를 뺐으므로 **계획서 최종형은 신규 16건**이다 — 뺀 것은 `install-entrypoints.test.cjs:30`과 같은 단언이라 커버리지 손실은 없다, Task 5 무결성 4/4 PASS(M-1의 `--allow-prerelease`가 없는 트리라 그 플래그만 뺀 형태로), 파이썬 스모크 `run_installer_smoke`·`run_local_smoke`·`run_v061_l0`·`validate_prototype` 전부 PASS, §4.4 완료 판정 6행 전부 기대대로. `바깥 참조 전환: 14` · 형제 참조 2곳 불변 · SKILL.md 3곳 전환도 실측으로 확인했다.
 - **범위 밖으로 남긴 것 — `fixtures/tiny/` 와 L2 하네스.** 설계 §7.1은 `tiny`를 "M0~M6 전 구간에서 사용"이라 쓰지만 §6은 "M0·M1a는 설치 가능 산출물의 동작 변화가 없어 L1만 돌린다"고 못 박는다. §4.4 완료 판정에도 픽스처는 없다. 소비자 없는 픽스처를 미리 만들면 M1b가 실제로 태울 때 다시 고치게 된다 → **M1b에서 하네스와 함께 만든다.**
-- **범위 밖으로 남긴 것 — Windows L1 실동작.** `continue-on-error`로 가시화만 했다. 실제 통과는 M1a(기계적 개명)에서 경로 가정을 정리할 때 함께 처리한다.
+- **범위 밖으로 남긴 것 — Windows L1 커버리지 0.** CI에 Windows 잡을 두지 않는다. 실제 통과는 M1a(기계적 개명)에서 경로 가정(구분자·임시 HOME·심볼릭 링크)을 정리할 때 blocking 잡으로 함께 넣는다. **소유자: M1a.**
+- **범위 밖으로 남긴 것 — 설치된 런타임의 사본 무결성.** 지금 프리플라이트는 `PACKAGE_ROOT`(설치 **전** 패키지)만 본다. 설치가 `.gsd/capabilities/<id>/`로 복사한 뒤의 사본이 나중에 손상되는 경우는 아무도 안 본다. 설계 §5.2가 doctor 신규 검사를 **M1d**에 배치해 두었으므로 거기서 `doctor`가 설치된 트리를 같은 `LIB-HASH.json`으로 재검증하게 한다. **소유자: M1d.** (Codex 지적 N4, 리뷰 D14에서 이월 결정.)
 - **M-1 출하본이 계획서를 앞질러 간 5곳을 되맞췄다.** M-1이 실제로 낸 물건은 계획보다 넓었고(L1 16 → 38건), 초안은 계획서 기준으로 쓰여 있었다. 실측으로 대조해 고친 것:
   1. **`test:l1`의 vacuous-pass 가드.** 출하본은 `node --test` 앞에 `e2e/contract`의 `*.test.cjs` 개수를 세어 0이면 던지는 `node -e`를 붙여 뒀다. Task 6 Step 1의 `scripts` 블록이 그걸 단순형으로 덮어써 회귀시킬 뻔했다 — 파일을 대량 이동하는 마일스톤에서 "glob이 아무것도 못 찾음"과 "전부 통과"를 구분해 주는 유일한 장치다. 값을 출하본 그대로 박았다.
   2. **`VERSION` 기준 문서 테스트가 2개.** 위 항목.
   3. **`version-consistency`의 §4.5 계층 1 테스트가 중복.** 출하본 `install-entrypoints.test.cjs:30`이 같은 불변식을 `install.sh`·`install.ps1` 양쪽으로 이미 검사한다. 같은 단언이 두 파일에 있으면 한쪽만 고치고 green을 본다 → 신규 파일에서 뺐다. 이 파일 책임은 `VERSION`==`package.json`==`capability.json` 하나다.
   4. **프리릴리스 펜스에 걸리는 곳이 파이썬 4곳만이 아니다.** `home-root-refusal.test.cjs`의 두 호출도 무플래그라, `VERSION`을 올리면 최상단 펜스가 먼저 터져 `$HOME` 펜스에 닿지 못한다 — L1이 `did not match /\$HOME/`로 죽는다. Task 1 Step 5에 2곳을 더했다(총 6곳). 반대로 `prerelease-fence.test.cjs:43`은 M-1이 이미 `VERSION` 기준으로 기대를 뒤집게 써 둬서 손대지 않는다.
   5. **Task 5의 프리플라이트 삽입 위치.** M-1이 `install()` 최상단에 exit 4 펜스 2개(프리릴리스 빌드, `$HOME` 루트)를 넣어서 "프로젝트 존재 검사 바로 뒤"라는 초안 지시가 그 사이를 갈랐다. 펜스 **뒤** · `const actions=[` **앞**으로 바꿨고, Before 블록을 출하본 전문으로 교체해 대조 가능하게 했다.
-- **테스트 누적:** Task 1 → +1, Task 2 → +4, Task 3 → +9, Task 4 → +2, Task 5 → +4. M-1 출하본(38건) 위에 **L1 +20건 = 58건**.
+- **테스트 누적:** Task 1 → +1, Task 2 → +4, Task 3 → +16, Task 4 → +3, Task 5 → +7. 기준선은 **42건**이다 — `aa9aad5`(detect exit-0 · verbatim symlink 수정)가 4건을 더한 뒤의 값이고, 계획 초안이 쓴 38은 그 커밋 이전 값이다. 따라서 **L1 +31건 = 73건**. 여기에 설치 후 소비자 실행 스모크 **1건**이 파이썬 쪽에 추가된다 (실제 설치를 하므로 L1이 아니다).
+
+---
+
+## GSTACK REVIEW REPORT
+
+`/plan-eng-review` · 2026-08-21 · branch `main` · commit `6889181` · 대상 `docs/superpowers/plans/2026-08-21-m0-shared-lib-build.md`
+
+| Runs | Status | Findings |
+|---|---|---|
+| Step 0 범위 도전 (복잡도 게이트 발동, 파일 20+) | 통과 — D2에서 "그대로 진행" 확정 | 0 (파일 수의 12/20은 sed 한 줄, 신규 판단 코드는 `build-capabilities.cjs` 하나) |
+| Section 1 아키텍처 | issues_found | 3 — A1 밀항자 필터 `.cjs` 전용 · A2 설계서 §4.2 이탈 미반영 · A3 `CAPABILITIES`/`LIB_MAP` 이중 목록 |
+| Section 2 코드 품질 | issues_found | 5 — B1 `:522`/`:557` 자기모순 · B2 기준선 38→42 · B3 실측 기준점이 M-1 이전 트리 · B4 `grep -c`가 줄 수 · B5 변조 방어 주장 과장 |
+| Section 3 테스트 | issues_found | 3 — C1 언매핑 삭제 분기 미실행·조용함 · C2 게이트 차단 단언 부재 2건 · C3 에러 경로 4건 미검증 (신규 분기 커버리지 73%) |
+| Section 4 성능 | clean | 0 — `copyRepo` 13ms 실측(저장소 1.1MB/106파일), L1 14회 ≈ 200ms |
+| Outside voice (Codex, `model_reasoning_effort=high`) | issues_found | 10 — 합의 3 (B5·A1·C1) / 신규 6 (N1~N6) / 전략 1 (조기 기계화) |
+
+**실측으로 검증한 것** — 판정을 근거 없이 올리지 않았다:
+
+| 주장 | 결과 |
+|---|---|
+| `prepack` 실패가 `npm pack`을 막는가 | **막는다.** exit 1, `--json`은 배열 대신 `{"error":…}` |
+| `install()` 줄 배치 | `:515` 시작 · `:523` `const actions=[` · `:532` dry-run 반환 · `:568` 프리플라이트 |
+| 바깥 참조 14곳 | require occurrence 16 − 형제 2 = **14**. 확장자 생략형 0건 |
+| `lib-layout` 테스트 3·4가 현 트리에서 통과하는가 | 미해결 relative require **0**, SKILL.md 누락 경로 **0** |
+| `readJson`/`exists`/`PACKAGE_ROOT`/`CAPABILITIES` 존재 | 전부 존재. `fail()`은 throw이지 exit이 아니라 `doctor`의 `try/catch`가 흡수 |
+| M1a가 `LIB_MAP` 키를 먼저 깨는가 | **깬다.** 설계 §5 표 — M1a가 `triple-gstack` → `crew-quality` |
+| L1 현재 건수 | **42** (`aa9aad5` 이후) |
+| 저장소 심볼릭 링크 | 0건 — `copyRepo`의 `verbatimSymlinks` 미지정은 현재 무해 |
+
+**반영 결과** — 결정 11건 전부 이 문서에 적용:
+
+| # | 결정 | 반영 위치 |
+|---|---|---|
+| A1 | 밀항자 필터를 확장자 부정목록 → 기록 허용목록으로 반전 | `presentFiles()` · 프리플라이트 마지막 루프 · 테스트 `non-.cjs stowaway` |
+| A2 | 설계서 §4.2 판정표 갱신 | Task 3 Step 8 (신규) |
+| A3 | 프리플라이트 검사 대상을 `readdirSync('capabilities')`로 | Task 5 Step 4 |
+| B1~B4 | 낡은 실측치 4곳 갱신 | 실측 기준점 · 자기 검토 · Task 2 Step 4 |
+| B5 | 변조 방어 주장 삭제, 단일 소스 규율로 정정 | `pack-contract` 주석 · 프리플라이트 주석 |
+| C1 | 언매핑 사본 기본 거부 + `--prune` 분리 | `planCapability()` · 테스트 2건 |
+| C2 | `prepack` 차단 · `--check` 무쓰기 단언 | `pack-contract` +1 · `lib-hash` +1 |
+| C3 | 에러 경로 4건 테스트 | `lib-hash` +3 · `bundled-lib-integrity` +1 |
+| N1 | 기록 자체 검증 (스키마·비어있지 않음·키 경로·해시 hex) | Task 5 Step 4 · 테스트 3건 |
+| N2 | 판정/쓰기 2-패스 분리 | `planCapability()`/`applyCapability()` · 혼합 drift 테스트 |
+| N3 | `LIB_MAP` 주석을 M1a 기준으로 | `LIB_MAP` 주석 |
+| N5 | 설치 후 소비자 실행 스모크 | Task 5 Step 8 (신규 `tests/run_installed_lib_smoke.py`) |
+| N6 | 배포 청결 게이트 `prepublishOnly` | Task 4 Step 3 · Task 6 Step 1 |
+| N4 | 설치된 런타임 무결성 → **M1d 이월** | 범위 밖 항목 (소유자 M1d) |
+| T2 | Windows CI 잡 제거 | Task 6 · 범위 밖 항목 (소유자 M1a) |
+
+**테스트 누적 변화:** L1 신규 **+20 → +31** (Task 3 9→16, Task 4 2→3, Task 5 4→7). 기준선 42 위에 **73건**. 파이썬 스모크 +1.
+
+**CODEX 흡수:** 합의 3건은 이미 리뷰가 독립 도달한 항목(교차 확인). 신규 6건 중 5건 채택, 1건(N4) 명시 이월. 전략 지적(조기 기계화)은 설계 §4.1의 시퀀싱 결정 및 D2 사용자 확정과 충돌하므로 **재논의하지 않는다** — Codex는 M1a~M1d 로드맵을 보지 못했다.
+
+**CROSS-MODEL TENSION:** T2(Windows CI)만 발생. 계획서는 "조용히 빼면 안 고쳐진다", Codex는 "영구 allowed-to-fail은 빨간 잡음". D15에서 잡 제거 + 명시 TODO로 양쪽 우려를 동시에 해소. 나머지는 긴장 없음.
+
+**남은 저심각도 (이 계획 범위 밖, M-1 출하본 소관):** `v0.6.5` 태그가 릴리스 커밋 `a3e2063`이 아니라 `45cfae9`에 있다 · `docs/INSTALL.md` 제목 버전을 아무 테스트도 보지 않는다.
+
+**VERDICT: APPROVED WITH CHANGES APPLIED** — 11건 전부 사용자 승인 후 이 문서에 반영 완료. 착수 전 남은 것은 계획서 커밋뿐이다. push 금지 제약 유효.
+
+NO UNRESOLVED DECISIONS
