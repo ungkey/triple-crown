@@ -43,8 +43,9 @@
     "access": "public"
   },
   "scripts": {
-    "test": "python tests/run_installer_smoke.py && python tests/run_v061_l0.py",
+    "test": "npm run test:l1 && python tests/run_installer_smoke.py && python tests/run_installed_lib_smoke.py && python tests/run_v061_l0.py",
     "test:l1": "node -e \"const n=require('fs').readdirSync('e2e/contract',{recursive:true}).filter(f=>String(f).endsWith('.test.cjs')).length;if(!n)throw new Error('L1 gate found no *.test.cjs under e2e/contract - refusing to report a vacuous pass')\" && node --test \"e2e/contract/**/*.test.cjs\"",
+    "test:pack": "npm pack && python tests/run_npx_tarball_smoke.py",
     "build:caps": "node scripts/build-capabilities.cjs",
     "pack:check": "npm pack --dry-run",
     "prepack": "node scripts/build-capabilities.cjs",

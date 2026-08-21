@@ -1,0 +1,41 @@
+name: L1
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  contract:
+    name: contract (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      # 외부 의존성이 0개라 lockfile 이 없다 — `npm ci` 는 실패한다. 설치 단계 자체가 없다.
+      - name: shared lib copies are in sync
+        run: node scripts/build-capabilities.cjs --check
+      - name: L1 contract
+        run: npm run test:l1
+
+  smoke:
+    name: python smoke (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python tests/run_installer_smoke.py
+      - run: python tests/run_installed_lib_smoke.py
+      - run: python tests/run_bash_installer_smoke.py
+      - run: python tests/run_v061_l0.py
+      - run: python tests/run_local_smoke.py
+      - name: npx tarball smoke
+        run: npm run test:pack
