@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "generatedFrom": "lib/",
+  "files": {
+    "repo-state-lib.cjs": "e145b8c15f5e1c43f3fdbdd2bfcfbd25dd140a5fe65ebc49d1add054ff917e26",
+    "resolve-phase-dir.cjs": "a9a2646db6e1124a2b6e25b982361568327884a10dde5635a6c0539239196ca5"
+  }
+}

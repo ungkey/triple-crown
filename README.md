@@ -88,6 +88,7 @@ GSD/gstack prerequisite detection/bootstrap
 → stable .crew source copy
 → crew-discipline
 → crew-quality
+→ crew-ship
 → crew-guide
 → .claude/skills (6 Crew skills)
 → CLAUDE.md routing

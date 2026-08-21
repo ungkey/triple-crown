@@ -159,6 +159,7 @@ Installed GSD capabilities:
 ```text
 crew-discipline
 crew-quality
+crew-ship
 crew-guide
 ```
 

@@ -36,14 +36,14 @@ Examples:
 Resolve the capability directory in this order:
 
 ```bash
-if [ -d ".gsd/capabilities/crew-quality" ]; then
-  CREW_CAP=".gsd/capabilities/crew-quality"
-elif [ -d "$HOME/.gsd/capabilities/crew-quality" ]; then
-  CREW_CAP="$HOME/.gsd/capabilities/crew-quality"
-elif [ -d "capabilities/crew-quality" ]; then
-  CREW_CAP="capabilities/crew-quality"
+if [ -d ".gsd/capabilities/crew-ship" ]; then
+  CREW_CAP=".gsd/capabilities/crew-ship"
+elif [ -d "$HOME/.gsd/capabilities/crew-ship" ]; then
+  CREW_CAP="$HOME/.gsd/capabilities/crew-ship"
+elif [ -d "capabilities/crew-ship" ]; then
+  CREW_CAP="capabilities/crew-ship"
 else
-  echo "BLOCKED: crew-quality capability directory not found"
+  echo "BLOCKED: crew-ship capability directory not found"
   exit 1
 fi
 ```

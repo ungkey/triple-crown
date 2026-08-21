@@ -82,13 +82,22 @@ test('a hand-edited copy blocks npm pack — prepack is a gate, not a formality'
   // 실측: prepack 이 non-zero 로 끝나면 npm pack 은 exit 1 이고 --json 출력도 배열이
   // 아니라 {"error":…} 가 된다. 누가 prepack 을 "… || true" 로 바꾸면 손편집된 사본이
   // 그대로 배포되는데, 그 회귀를 잡는 것은 이 단언뿐이다.
-  const repo = copyRepo('crew-pack-blocked-');
-  fs.appendFileSync(
-    path.join(repo, 'capabilities', 'crew-quality', 'checks', 'lib', 'repo-state-lib.cjs'),
-    '\n// hand edit\n');
-  const r = pack(repo);
-  assert.notStrictEqual(r.status, 0, 'npm pack must not succeed when prepack refuses');
-  assert.match(`${r.stdout}${r.stderr}`, /hand-edited/);
+  // 사본을 심는 capability 는 LIB_MAP 이 소유한다. 여기서 한 곳만 리터럴로 고르면
+  // 새 capability 의 사본은 손편집돼도 이 게이트를 통과한다 — 루프는 test() 안에 둬서
+  // 테스트 개수는 그대로 두고 대상만 늘린다.
+  for (const [capId, libs] of Object.entries(LIB_MAP)) {
+    const repo = copyRepo('crew-pack-blocked-');
+    fs.appendFileSync(
+      path.join(repo, 'capabilities', capId, 'checks', 'lib', libs[0]),
+      '\n// hand edit\n');
+    const r = pack(repo);
+    assert.notStrictEqual(r.status, 0,
+      `${capId}: npm pack must not succeed when prepack refuses`);
+    assert.ok(
+      `${r.stdout}${r.stderr}`.includes(
+        `${capId}: capabilities/${capId}/checks/lib/${libs[0]} was hand-edited`),
+      `${capId}: prepack must name the hand-edited copy:\n${r.stdout}${r.stderr}`);
+  }
 });
 
 test('a prerelease VERSION is refused by the publish gate, even behind --tag', () => {

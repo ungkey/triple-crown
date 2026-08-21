@@ -49,7 +49,8 @@ def main():
         assert "installed successfully" in p.stdout
         assert (project/".crew"/"VERSION").read_text().strip()==EXPECTED_VERSION
         rows=json.loads((project/".fake-gsd-capabilities.json").read_text())
-        assert {x["id"] for x in rows}=={"crew-discipline","crew-quality","crew-guide"}
+        expected={p.name for p in (ROOT/"capabilities").iterdir() if p.is_dir()}
+        assert {x["id"] for x in rows}==expected,({x["id"] for x in rows},expected)
         print("PASS npx-local-tarball-install")
     finally:
         shutil.rmtree(root,ignore_errors=True)

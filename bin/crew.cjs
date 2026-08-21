@@ -10,7 +10,7 @@ const crypto = require('crypto');
 
 const PACKAGE_ROOT = path.resolve(__dirname, '..');
 const VERSION = fs.readFileSync(path.join(PACKAGE_ROOT, 'VERSION'), 'utf8').trim();
-const CAPABILITIES = ['crew-discipline', 'crew-quality', 'crew-guide'];
+const CAPABILITIES = ['crew-discipline', 'crew-quality', 'crew-ship', 'crew-guide'];
 const ROUTING_START = '<!-- crew:managed-routing:start -->';
 const ROUTING_END = '<!-- crew:managed-routing:end -->';
 
@@ -585,7 +585,7 @@ async function install(root,opts) {
   log('Capability manifest preflight: PASS');
   const actions=[
     `vendor Crew v${VERSION} runtime files to ${path.join(root,'.crew')}`,
-    'install/refresh 3 project-scoped GSD capabilities with explicit consent',
+    `install/refresh ${CAPABILITIES.length} project-scoped GSD capabilities with explicit consent`,
     `install ${expectedSkillDirs().length} Crew skills into ${path.join(root,'.claude','skills')}`,
   ];
   if(opts.routing) actions.push('add/update a managed Crew section in CLAUDE.md');

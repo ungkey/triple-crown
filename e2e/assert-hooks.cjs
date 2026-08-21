@@ -59,9 +59,9 @@ requireOne(verify, {capId:'crew-quality',kind:'gate',commandIncludes:'verify-rea
 requireOne(verify, {capId:'crew-quality',kind:'gate',commandIncludes:'qa-ready.cjs'}, 'QA ready gate');
 
 requireOne(shipPre, {capId:'crew-quality',kind:'gate',commandIncludes:'security-ready.cjs'}, 'external security ship gate');
-requireOne(shipPre, {capId:'crew-quality',kind:'gate',commandIncludes:'ship-guard-control.cjs'}, 'GSD ship authorization gate');
+requireOne(shipPre, {capId:'crew-ship',kind:'gate',commandIncludes:'ship-guard-control.cjs'}, 'GSD ship authorization gate');
 
-const post = requireOne(shipPost, {capId:'crew-quality',kind:'step',skill:'crew-gsd-postship'}, 'post-ship release adapter');
+const post = requireOne(shipPost, {capId:'crew-ship',kind:'step',skill:'crew-gsd-postship'}, 'post-ship release adapter');
 if (post.onError !== 'skip') fail('ship:post adapter must be best-effort onError=skip');
 
 console.log('PASS hook contract: plan -> execute -> verify -> ship surfaces');

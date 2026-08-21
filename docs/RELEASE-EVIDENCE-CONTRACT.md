@@ -56,7 +56,7 @@ PR creation is not deployment.
 Deployment is recorded with:
 
 ```bash
-node .gsd/capabilities/crew-quality/checks/release-ledger.cjs \
+node .gsd/capabilities/crew-ship/checks/release-ledger.cjs \
   record-deployment ".planning/phases/03-auth" \
   --status deployed \
   --url https://app.example.com \

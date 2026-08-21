@@ -15,7 +15,10 @@ test('prerelease VERSION refuses install without --allow-prerelease', () => {
   // fixture stays a self-consistent package — otherwise the (unrelated) manifest
   // version-agreement check rejects it for version drift, not for the prerelease fence
   // this test is actually about.
-  for (const id of ['crew-discipline', 'crew-quality', 'crew-guide']) {
+  // 디스크를 읽는다. id 를 리터럴로 열거하면 capability 가 늘어날 때 이 테스트만 조용히
+  // 낡아 프리릴리스 펜스가 아니라 버전 불일치를 검사하게 된다.
+  for (const id of fs.readdirSync(path.join(pkg, 'capabilities'), { withFileTypes: true })
+    .filter((e) => e.isDirectory()).map((e) => e.name)) {
     const capFile = path.join(pkg, 'capabilities', id, 'capability.json');
     const cap = JSON.parse(fs.readFileSync(capFile, 'utf8'));
     cap.version = '0.7.0-test';

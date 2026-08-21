@@ -45,7 +45,7 @@ def validate(name, cap):
             for rel in re.findall(r'\$\{GSD_CAP_DIR\}/([^\"]+)', pred.get("command","")):
                 if ".." in Path(rel).parts or not (CAPS/name/rel).exists(): fail(f"{name}: missing gate target {rel}")
 
-    if name == "crew-quality":
+    if name == "crew-ship":
         post=[s for s in cap["steps"] if s["point"]=="ship:post" and s["ref"].get("skill")=="crew-gsd-postship"]
         if len(post)!=1: fail("missing unique crew-gsd-postship step")
         if post[0]["onError"]!="skip": fail("ship:post must be best-effort/onError skip")
@@ -56,7 +56,7 @@ def validate(name, cap):
             if key not in cap["config"]: fail(f"missing config {key}")
 
 def main():
-    for name in ("crew-discipline","crew-quality","crew-guide"):
+    for name in sorted(p.name for p in CAPS.iterdir() if p.is_dir()):
         cap=load(name); validate(name,cap); print(f'PASS: {name}')
 
     guide = load("crew-guide")

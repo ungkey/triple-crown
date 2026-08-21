@@ -51,7 +51,8 @@ def main():
         assert (project/".crew"/"VERSION").read_text().strip()==expected_version
         rows=json.loads((project/".fake-gsd-capabilities.json").read_text())
         ids={x["id"] for x in rows}
-        assert ids=={"crew-discipline","crew-quality","crew-guide"},ids
+        expected_caps={p.name for p in (ROOT/"capabilities").iterdir() if p.is_dir()}
+        assert ids==expected_caps,(ids,expected_caps)
         assert (project/".gsd"/"capabilities"/"crew-guide"/"capability.json").exists()
         text=(project/"CLAUDE.md").read_text()
         assert text.count("<!-- crew:managed-routing:start -->")==1

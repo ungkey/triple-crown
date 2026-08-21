@@ -5,6 +5,10 @@ const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
 const { ROOT, walkFiles } = require('./helpers/repo.cjs');
+// build-capabilities 가 실제로 무엇을 어디에 심는지가 단일 진실이다. 테스트가 자기 목록을
+// 따로 들면 capability 가 늘어날 때 조용히 낡고, 낡은 채로 계속 초록이다. 루프는 test()
+// 안에 둔다 — test() 를 루프로 감싸면 테스트 개수가 capability 수만큼 늘어난다.
+const { LIB_MAP } = require('../../scripts/build-capabilities.cjs');
 
 const SHARED = ['repo-state-lib.cjs', 'evidence-store.cjs', 'resolve-phase-dir.cjs'];
 
@@ -12,18 +16,22 @@ test('the shared libs live in lib/ and nowhere else as an original', () => {
   for (const f of SHARED) {
     assert.ok(fs.existsSync(path.join(ROOT, 'lib', f)), `lib/${f} must be the canonical copy`);
     // 이동 전 위치에 남아 있으면 두 원본이 공존한다 — 정확히 이 상태가 §4 가 없애려는 것이다.
-    assert.ok(!fs.existsSync(path.join(ROOT, 'capabilities', 'crew-quality', 'checks', f)),
-      `capabilities/crew-quality/checks/${f} must have moved into lib/`);
+    for (const capId of Object.keys(LIB_MAP)) {
+      assert.ok(!fs.existsSync(path.join(ROOT, 'capabilities', capId, 'checks', f)),
+        `capabilities/${capId}/checks/${f} must have moved into lib/`);
+    }
   }
 });
 
 test('every bundled copy is byte-identical to its canonical lib', () => {
-  const dir = path.join(ROOT, 'capabilities', 'crew-quality', 'checks', 'lib');
-  for (const f of SHARED) {
-    assert.deepStrictEqual(
-      fs.readFileSync(path.join(dir, f)),
-      fs.readFileSync(path.join(ROOT, 'lib', f)),
-      `checks/lib/${f} drifted from lib/${f}`);
+  for (const [capId, files] of Object.entries(LIB_MAP)) {
+    const dir = path.join(ROOT, 'capabilities', capId, 'checks', 'lib');
+    for (const f of files) {
+      assert.deepStrictEqual(
+        fs.readFileSync(path.join(dir, f)),
+        fs.readFileSync(path.join(ROOT, 'lib', f)),
+        `${capId}/checks/lib/${f} drifted from lib/${f}`);
+    }
   }
 });
 

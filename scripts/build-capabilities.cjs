@@ -42,6 +42,7 @@ const HASH_FILE = 'LIB-HASH.json';
 // 테스트가 잡는다.
 const LIB_MAP = {
   'crew-quality': ['repo-state-lib.cjs', 'evidence-store.cjs', 'resolve-phase-dir.cjs'],
+  'crew-ship': ['repo-state-lib.cjs', 'resolve-phase-dir.cjs'],
 };
 
 const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');

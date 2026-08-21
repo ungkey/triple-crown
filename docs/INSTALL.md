@@ -84,6 +84,7 @@ From the v0.6.1 bundle or your copied project integration directory:
 ```bash
 gsd capability install ./capabilities/crew-discipline --scope project --yes
 gsd capability install ./capabilities/crew-quality --scope project --yes
+gsd capability install ./capabilities/crew-ship --scope project --yes
 gsd capability install ./capabilities/crew-guide --scope project --yes
 ```
 

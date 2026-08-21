@@ -52,14 +52,23 @@ with tempfile.TemporaryDirectory() as td:
 
     hits = sorted(Path(td).rglob("checks/lib/repo-state-lib.cjs"))
     assert hits, "no installed copy of checks/lib/repo-state-lib.cjs found under the install roots"
+    # M1b 이후 evidence-store 사본은 crew-quality 에만 심긴다(LIB_MAP). 형제 참조 해석은
+    # 그 사본에서 증명하고, 나머지 사본은 단독 로드만 확인한다. 형제 쌍을 한 번도 못
+    # 돌았으면 아래에서 실패한다 — 증명이 조용히 사라지는 것을 막는다.
+    siblings_exercised = 0
     for lib in hits:
-        # evidence-store 는 형제 ./repo-state-lib.cjs 를 require 한다 — 둘 다 로드해야
-        # "사본 디렉터리 안에서 형제 참조가 해석된다"가 증명된다.
+        args = [str(lib)]
+        ev = lib.parent / "evidence-store.cjs"
+        if ev.exists():
+            args.append(str(ev)); siblings_exercised += 1
         r = subprocess.run(
             ["node", "-e",
-             "require(process.argv[1]);require(process.argv[2]);console.log('ok')",
-             str(lib), str(lib.parent / "evidence-store.cjs")],
+             "for(const m of process.argv.slice(1))require(m);console.log('ok')",
+             *args],
             capture_output=True, text=True)
         assert r.returncode == 0 and "ok" in r.stdout, f"{lib}: {r.stderr}"
+
+    assert siblings_exercised, ("no installed copy paired repo-state-lib with "
+                                "evidence-store — the sibling-require proof stopped running")
 
 print("PASS installed-shared-lib-require")

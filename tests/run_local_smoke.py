@@ -3,7 +3,9 @@ from pathlib import Path
 import json, subprocess, tempfile, shutil
 
 ROOT=Path(__file__).resolve().parents[1]
-CHECKS=ROOT/"capabilities"/"crew-quality"/"checks"
+# 이 스모크가 부르는 것은 ship-guard-control · release-ledger · canary-session ·
+# docs-release-session 넷뿐이고 M1b 가 전부 crew-ship 으로 옮겼다.
+CHECKS=ROOT/"capabilities"/"crew-ship"/"checks"
 GUARD=ROOT/"guards"/"crew-ship-guard.cjs"
 INSTALLER=ROOT/"scripts"/"install-claude-ship-guard.cjs"
 

@@ -10,6 +10,7 @@ const {
 } = require('./lib/common.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
+const CAP_IDS = require(path.join(ROOT,'bin','crew.cjs')).CAPABILITIES;
 const args = process.argv.slice(2);
 const mock = args.includes('--mock');
 const keep = args.includes('--keep');
@@ -49,9 +50,8 @@ function makeFixture() {
   mkdirp(path.join(root,'.planning','phases'));
   copyTree(path.join(ROOT,'fixtures','planning'), path.join(root,'.planning'));
   mkdirp(path.join(root,'capabilities'));
-  copyTree(path.join(ROOT,'capabilities','crew-quality'), path.join(root,'capabilities','crew-quality'));
-  copyTree(path.join(ROOT,'capabilities','crew-discipline'), path.join(root,'capabilities','crew-discipline'));
-  copyTree(path.join(ROOT,'capabilities','crew-guide'), path.join(root,'capabilities','crew-guide'));
+  // 설치자가 소유한 목록을 그대로 쓴다. L2 가 자기 목록을 따로 들면 갈라져도 아무도 모른다.
+  for (const id of CAP_IDS) copyTree(path.join(ROOT,'capabilities',id), path.join(root,'capabilities',id));
 
   runOrFail('fixture-git','git',['init','-q'],root);
   runOrFail('fixture-git','git',['config','user.email','crew-e2e@example.invalid'],root);
@@ -98,7 +98,7 @@ try {
   result.stages.push({stage:'gsd-init',status:'PASS',stdout:init.stdout.trim()});
 
   // Install capabilities. --yes is required for non-interactive executable-surface consent.
-  for (const id of ['crew-discipline','crew-quality','crew-guide']) {
+  for (const id of CAP_IDS) {
     const r = runGsd(
       `install-${id}`, gsd,
       ['capability','install',`./capabilities/${id}`,'--scope','project','--yes'],
@@ -109,15 +109,15 @@ try {
 
   const list = runGsd('capability-list',gsd,['capability','list','--scope','project'],fixture,env);
   const listJson = parseJsonOutput('capability-list', list.stdout);
-  for (const id of ['crew-discipline','crew-quality','crew-guide']) {
+  for (const id of CAP_IDS) {
     const row = listJson.find(x => x.id === id);
     if (!row) fatal('capability-list',`${id} missing from capability list`);
     if (row.status !== 'active') fatal('capability-list',`${id} status=${row.status}; expected active`,{row});
   }
-  result.stages.push({stage:'capability-list',status:'PASS',capabilities:listJson.filter(x=>['crew-discipline','crew-quality','crew-guide'].includes(x.id))});
+  result.stages.push({stage:'capability-list',status:'PASS',capabilities:listJson.filter(x=>CAP_IDS.includes(x.id))});
 
   // Staged bundles must exist in project scope.
-  for (const id of ['crew-discipline','crew-quality','crew-guide']) {
+  for (const id of CAP_IDS) {
     const staged = path.join(fixture,'.gsd','capabilities',id,'capability.json');
     if (!fs.existsSync(staged)) fatal('staging',`missing staged bundle: ${staged}`);
   }
