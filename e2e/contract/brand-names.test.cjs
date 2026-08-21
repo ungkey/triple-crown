@@ -43,6 +43,7 @@ const REPO_PATH_COUNTS = {
   'package.json': 1,
   'README.md': 11,
   'docs/INSTALLER.md': 6,
+  'e2e/contract/install-entrypoints.test.cjs': 1,
 };
 
 function tracked() {

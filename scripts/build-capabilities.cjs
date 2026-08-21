@@ -34,7 +34,8 @@ const HASH_FILE = 'LIB-HASH.json';
 // 어느 capability 가 어느 공유 lib 을 쓰는가.
 //
 // 이 표를 처음 건드리는 것은 M1b 가 아니라 **M1a** 다 — 설계 §5 표대로 M1a 가
-// crew-quality 을 crew-quality 로 1:1 개명한다. 그 기계적 치환은 이 키,
+// 개명 전 capability id(매핑은 docs/RENAME-MAP.md 참조)를 crew-quality 로 1:1
+// 개명한다. 그 기계적 치환은 이 키,
 // capabilities/<id>/checks/lib/ 경로, 그리고 lib-hash.test.cjs 의 git restore 정규식을
 // **한 커밋에서 같이** 옮겨야 한다. M1b 는 그 뒤에 crew-quality 를 9개로 쪼개며 표를
 // 늘린다. 표에서 빠진 참조는 e2e/contract/lib-hash.test.cjs 의 LIB_MAP 완전성

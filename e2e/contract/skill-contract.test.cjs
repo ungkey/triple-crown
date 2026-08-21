@@ -55,7 +55,7 @@ test('the installer surfaces skills verbatim — SKILL_PREFIX is empty', () => {
   // 접두사가 되살아나면 설치된 디렉터리는 다시 `gsd-crew-...` 가 되고, 그때
   // Claude Code 는 프론트매터 name 과 어긋난 디렉터리를 인식하지 못한다.
   const src = fs.readFileSync(path.join(ROOT, 'bin', 'crew.cjs'), 'utf8');
-  const m = src.match(/^const SKILL_PREFIX = '([^']*)';$/m);
+  const m = src.match(/^const SKILL_PREFIX = '([^']*)';/m);
   assert.ok(m, 'SKILL_PREFIX declaration not found in bin/crew.cjs');
   assert.strictEqual(m[1], '', 'SKILL_PREFIX must stay empty now that stems are self-describing');
 });

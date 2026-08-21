@@ -7,6 +7,14 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..', '..');
 
+// Must stay an unescaped literal (no `\/`) so the brand fence's line-level
+// masking in e2e/contract/brand-names.test.cjs recognises and strips this
+// token before its LEGACY scan runs. Build the regexes from it below instead
+// of writing the escaped form inline.
+const REPO_PATH = 'ungkey/triple-crown';
+const GH = new RegExp(`github:${REPO_PATH}(#[\\w.\\-]+)?`, 'g');
+const RAW = new RegExp(`raw\\.githubusercontent\\.com/${REPO_PATH}/([^/]+)/`, 'g');
+
 function shDefaultRef() {
   const m = fs.readFileSync(path.join(ROOT, 'install.sh'), 'utf8')
     .match(/^REF="\$\{CREW_REF:-([^}]+)\}"/m);
@@ -45,10 +53,10 @@ test('every documented github install example pins the bootstrap tag', () => {
   const bad = [];
   for (const p of scanned) {
     fs.readFileSync(p, 'utf8').split('\n').forEach((line, i) => {
-      for (const m of line.matchAll(/github:ungkey\/crew(#[\w.\-]+)?/g)) {
+      for (const m of line.matchAll(GH)) {
         if (m[1] !== `#${ref}`) bad.push(`${path.relative(ROOT, p)}:${i + 1}: ${m[0]}`);
       }
-      for (const m of line.matchAll(/raw\.githubusercontent\.com\/ungkey\/crew\/([^/]+)\//g)) {
+      for (const m of line.matchAll(RAW)) {
         if (m[1] !== ref) bad.push(`${path.relative(ROOT, p)}:${i + 1}: ref=${m[1]}`);
       }
     });

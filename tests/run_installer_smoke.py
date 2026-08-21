@@ -98,9 +98,9 @@ def main():
         assert "/plan-eng-review" in st.stdout
 
         # Uninstall should clean managed surfaces without deleting README.
-        # A hand-authored skill sharing the gsd- prefix must survive uninstall.
-        keep=project/".claude"/"skills"/"gsd-user-owned"; keep.mkdir(parents=True)
-        (keep/"SKILL.md").write_text("---\nname: gsd-user-owned\n---\n",encoding="utf-8")
+        # A hand-authored skill sharing the crew- prefix must survive uninstall.
+        keep=project/".claude"/"skills"/"crew-user-owned"; keep.mkdir(parents=True)
+        (keep/"SKILL.md").write_text("---\nname: crew-user-owned\n---\n",encoding="utf-8")
 
         run(["node",str(CLI),"uninstall","--project",str(project),"--yes"],ROOT,env)
         assert not (project/".crew").exists()

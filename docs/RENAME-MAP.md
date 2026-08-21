@@ -1,8 +1,10 @@
 # 이름 매핑 (M1a)
 
 `v0.7.0-m1a` 에서 브랜드 식별자를 `crew` 계열로 1:1 개명했다. 구 이름은 이 문서와
-아래 동결 목록에만 남는다. `e2e/contract/brand-names.test.cjs` 가 그 외 어디에도
-구 이름이 없음을 매 커밋 검사한다.
+아래 동결 목록, 그리고 아직 개명되지 않은 GitHub 저장소 경로 `ungkey/triple-crown`
+(`install.sh`, `install.ps1`, `package.json`, `README.md`, `docs/INSTALLER.md` — 아래
+'바꾸지 않은 것' 참조. 이 파일들은 동결 목록이 아니다)에만 남는다.
+`e2e/contract/brand-names.test.cjs` 가 그 외 어디에도 구 이름이 없음을 매 커밋 검사한다.
 
 ## 매핑표
 
@@ -10,6 +12,7 @@
 |---|---|---|
 | npm 패키지 | `triple-crown-workflow-installer` | `crew-harness` |
 | CLI | `triple-crown` | `crew` |
+| npm bin alias | `triple-crown-install` | `crew-install` |
 | 설치자 | `bin/triple-crown.cjs` | `bin/crew.cjs` |
 | 가드 훅 | `guards/triple-crown-ship-guard.cjs` | `guards/crew-ship-guard.cjs` |
 | capability | `triple-gstack` | `crew-quality` |
@@ -44,12 +47,26 @@ config 루트·capability id·마커가 바뀌므로 이것은 breaking rename �
 - **아티팩트 이름** — `GSTACK-CODE-REVIEW.json`, `GSTACK-QA.json`, `GSTACK-PLAN-REVIEW.json`,
   `GSTACK-SECURITY.json`, `GSTACK-CANARY.json`, `GSTACK-RETRO.json`, `GSTACK-DOCUMENT-RELEASE.json`,
   `GSTACK-QA-UAT-BRIDGE.json`, `MUTATION.json`, `EVIDENCE.json`. 이름을 바꾸면 진행 중인
-  phase 의 증거가 통째로 무효화된다 (설계 §3.1).
+  phase 의 증거가 통째로 무효화된다 (설계 §3.1). 단, `EVIDENCE.json` **레코드 안**의
+  `producer` 필드 값(`lib/evidence-store.cjs:182` — `opts.producer || 'crew'`)은 개명
+  대상이라 바뀌었다: `docs/EVIDENCE-CONTRACT.md:30` 은 새 값(`"crew-gsd-review"` 등)을
+  문서화하지만, M1a 이전에 기록된 레코드는 구 문자열을 그대로 담고 있다. 이 필드를
+  읽거나 걸러내는 코드가 없으므로(확인됨) 진행 중인 phase 의 증거는 무효화되지 않는다.
 - **`gstack` 단독 토큰** — 외부 도구(garrytan/gstack)를 가리킨다. `~/.gstack`,
   `~/.claude/skills/gstack/`, `/plan-eng-review`, `/review`. config 키의 중간 마디
   `crew.gstack.*` 도 이 도구와의 다리를 뜻하므로 유지한다.
 - **GSD 표면** — `.gsd/`, `gsd-tools`, `gsd-` capability id 예약 접두사.
 - **GitHub 경로** — `ungkey/triple-crown`. 저장소 개명은 별도 승인 작업이다.
+- **`crew.superpowers.*` config 키** — `crew-discipline` capability
+  (`capabilities/crew-discipline/capability.json:25`)가 여전히
+  `crew.superpowers.enabled` 를 선언한다. `docs/RESTRUCTURE-PLAN.md:436` 은 이를
+  최종적으로 `crew.discipline.*` 로 정리하는 것을 목표로 하지만, M1a 는 문자열
+  치환만 수행했고 config 네임스페이스 재설계는 그 범위 밖이다. `crew.gstack.*` 와
+  같은 이유로 지금은 남겨둔다 — M1b 가 이 괴리를 버그로 읽지 않도록 여기 기록한다.
+- **`tripleCrownVersion` → `crewVersion` 치환 규칙** — 개명 계획에는 있었지만 실제로는
+  한 번도 발동하지 않았다. 유일한 등장 위치가 동결 대상인
+  `e2e/compatibility-baseline.json:58` 이었기 때문이다 (§ 동결 목록 참조). 매핑표에는
+  올리지 않는다 — 규칙은 존재했지만 결과가 없었다.
 - **`tc-*` 임시 디렉터리 접두사** — `tests/run_installer_smoke.py` 등 파이썬 스모크
   다섯 곳의 `mkdtemp(prefix="tc-...")` 와 `.gitignore` 의 `tc-installer-*/`. `tc` 는
   구 브랜드의 약자지만 **사용자 표면이 아니고** 시스템 임시 경로에만 나타난다.
@@ -81,6 +98,9 @@ config 루트·capability id·마커가 바뀌므로 이것은 breaking rename �
 4. ~/.claude/settings.json 의 PreToolUse(Bash) 훅 등록 항목
 5. ~/.triple-crown/ 벤더 디렉터리
 6. ~/.claude/skills/ 의 .triple-crown-skill 마커 디렉터리
+7. isGuardHook() 이 인식하지 못해 남는 중복 PreToolUse(Bash) 훅 그룹 — 옛/새 가드가
+   Bash 호출마다 둘 다 실행된다. doctor 의 ship-guard-registered 검사(bin/crew.cjs:540)는
+   이를 보지 못하고 READY=true 로 보고한다
 ```
 
 **M1a~M1c 사이의 증상.** 개명 전 설치본이 남은 머신에서 새 버전을 설치하면 위 여섯
@@ -90,8 +110,41 @@ config 루트·capability id·마커가 바뀌므로 이것은 breaking rename �
 마커 디렉터리를 건너뛰기 때문이다. `e2e/contract/legacy-transition.test.cjs` 가 이
 상태를 명시적으로 단언하며, **M1c 는 그 단언을 뒤집는 것으로 완료를 증명한다.**
 
+더 심각한 증상도 있다. `scripts/install-claude-ship-guard.cjs` 의 `isGuardHook()`
+(`:15`)이 `triple-crown-ship-guard.cjs` 를 인식하지 못해 `migrateLegacyRegistrations()`
+(`:25`)가 그 등록을 그대로 두고 새 `crew-ship-guard.cjs` 그룹을 별도로 추가한다 —
+Bash 호출마다 옛 가드와 새 가드가 **둘 다** 실행된다. 옛 가드는 이제 아무도 쓰지
+않는 `.planning/.triple-crown/ship-auth.json` 을 읽으므로
+(`capabilities/crew-quality/checks/ship-guard-control.cjs:9`, `guards/crew-ship-guard.cjs:120`
+은 둘 다 `.planning/.crew` 를 쓴다) 항상 실패해 `guards/crew-ship-guard.cjs:169` 의
+최종 `deny()` 로 떨어진다 — 이런 머신에서는 **모든 `git push`/PR 이 막힌다.** 그런데
+`bin/crew.cjs:540` 의 `doctor` 는 `crew-ship-guard.cjs` 를 포함하는 명령만 세므로 이
+상태에서도 `READY=true` 로 보고한다 — 진단 도구가 이 증상에 대해 눈이 멀어 있다.
+`e2e/contract/legacy-transition.test.cjs` 의 다섯 번째 단언이 이 상태를 기록하며,
+M1c 는 그 단언도 함께 뒤집어야 한다.
+
 현재 노출은 0 이다: `legacy-backup.cjs detect` -> `legacy targets: 0`, npm 레지스트리
 404, 원격 부트스트랩 파손, 설치 시점 프리릴리스 펜스.
 
 기존 설치가 GSD config 에 `triple_crown.*` 값을 갖고 있으면 M1a 이후 그 값은 읽히지
 않고 `crew.*` 기본값이 적용된다. `uninstall-legacy` 는 이 사실을 사용자에게 고지한다.
+
+## M7 입력: 부트스트랩 예시가 존재한 적 없는 조합을 이름한다
+
+`ungkey/triple-crown` 저장소 개명(M7) 전까지는 고칠 수 없는 조합이 문서에 두 군데
+남아 있다. 지금은 노출이 0 이다 — v0.6.5 태그가 원격에 없다 — 이지만, M7 이 부트스트랩
+참조를 개명 후 태그로 옮길 때 반드시 같이 정리해야 한다.
+
+- **`README.md:42`** — `npx --yes --package github:ungkey/triple-crown#v0.6.5 crew install --yes`.
+  `--package X cmd` 형태에서 npx 는 지정한 패키지 **그 태그 안의** `cmd` bin 을
+  찾는데, `v0.6.5` 태그의 유일한 bin 은 `triple-crown` 이지 `crew` 가 아니다 — 이
+  명령은 실행될 수 없다. 개명 전 태그와 개명 후 바이너리 이름이 한 줄에 섞였다.
+- **`README.md:78-79`**, **`bin/crew.cjs:700`**, **`docs/INSTALLER.md:16,24,30,38,380`** —
+  `crew-harness-0.6.5.tgz` 는 어떤 태그도 만들 수 없는 파일명이다. v0.6.5 는
+  `triple-crown-workflow-installer-0.6.5.tgz` 로 packing 됐고, 이 트리는
+  `crew-harness-0.7.0-dev.tgz` 로 packing 된다.
+
+수정은 M7 의 일이다 — 부트스트랩 참조가 처음으로 개명 후 태그를 가리키게 될 때. 지금
+`README.md` / `docs/INSTALLER.md` / `bin/crew.cjs:700` 을 건드리면 "문서화된 모든
+tarball 예시가 이 트리가 packing 되는 버전과 일치한다"는 계약(`install-entrypoints.test.cjs`)
+을 깨뜨리거나, 존재하지 않는 릴리스를 문서가 주장하게 만든다.

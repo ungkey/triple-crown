@@ -15,9 +15,10 @@ const ROUTING_START = '<!-- crew:managed-routing:start -->';
 const ROUTING_END = '<!-- crew:managed-routing:end -->';
 
 // Claude Code discovers skills by directory name under `<project>/.claude/skills`.
-// GSD prefixes every capability-owned skill stem with `gsd-` when it stages its own
-// runtime surface, and each bundled SKILL.md declares the prefixed name in its
-// frontmatter, so the project-scoped copy must use the identical directory name.
+// Since M1a, skill stems are self-describing (`crew-*`) and carry no separate
+// installer prefix: the installed directory name equals the source stem equals
+// the bundled SKILL.md's frontmatter `name`. e2e/contract/skill-contract.test.cjs
+// pins that invariant, including that this prefix stays empty.
 const SKILL_PREFIX = '';
 // Ownership marker written next to every skill this installer manages. Uninstall
 // removes exactly the marked directories, so a hand-authored gsd-* skill in the
