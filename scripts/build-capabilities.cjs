@@ -60,14 +60,25 @@ function sameRecord(a, b) {
   const kb = Object.keys(b.files || {}).sort();
   return ka.length === kb.length && ka.every((k, i) => k === kb[i] && a.files[k] === b.files[k]);
 }
-// 사본 디렉터리에서 기록 파일 자신을 뺀 전부. **확장자로 거르지 않는다** —
+// 사본 디렉터리를 파일과 하위 디렉터리로 갈라 읽는다. **확장자로 거르지 않는다** —
 // `.cjs` 만 세면 checks/lib/helper.js 같은 밀항자가 빌드 · --check · 설치
 // 프리플라이트 세 검사를 전부 통과하고 tarball 에 실린다(package.json files 가
 // capabilities 를 싣는다). CommonJS 는 .js 도 require 로 해석하므로 한 줄이면 실행된다.
-function presentFiles(destDir) {
-  return fs.existsSync(destDir)
-    ? fs.readdirSync(destDir).filter((f) => f !== HASH_FILE).sort()
-    : [];
+//
+// 디렉터리를 따로 분류하는 이유: 예전에는 readdirSync 가 준 이름을 전부 "파일"로 다뤄
+// 하위 디렉터리가 언매핑 항목으로 잡혔고, --prune 이 그걸 remove op 로 계획한 뒤
+// 비재귀 fs.rmSync 가 **적용 단계 한가운데서** ERR_FS_EISDIR 로 터졌다. 앞선 copy op 는
+// 이미 적용된 뒤라 사본은 새 canonical, 기록은 옛 해시 — 2-패스 설계가 존재 이유로
+// 삼는 바로 그 불일치가 남았다(실측). 그래서 디렉터리는 계획 단계에서 거부한다.
+// 디렉터리가 아닌 것은 심볼릭 링크든 소켓이든 전부 파일 쪽에 넣는다 — 여기서 빠지면
+// 표에 없는 항목을 거부하는 검사 자체를 우회하게 된다.
+function readDest(destDir) {
+  if (!fs.existsSync(destDir)) return { files: [], dirs: [] };
+  const entries = fs.readdirSync(destDir, { withFileTypes: true });
+  return {
+    files: entries.filter((e) => !e.isDirectory() && e.name !== HASH_FILE).map((e) => e.name).sort(),
+    dirs: entries.filter((e) => e.isDirectory()).map((e) => e.name).sort(),
+  };
 }
 // 기대 기록은 **사본**을 다시 읽어 만든다. 기록의 의미를 "도구가 마지막에 심어 놓은
 // 사본의 해시"로 못 박아야 다음 회차의 copy == prev 판정이 성립한다. canonical 해시로
@@ -92,7 +103,15 @@ function planCapability(id, files, opts = {}) {
   const destDir = path.join(capDir, 'checks', 'lib');
   const hashPath = path.join(destDir, HASH_FILE);
   const record = readJson(hashPath);
-  const present = presentFiles(destDir);
+  const { files: present, dirs: presentDirs } = readDest(destDir);
+
+  // checks/lib/ 은 평평한 파일 목록이다. 하위 디렉터리는 기록할 수도, 대조할 수도 없다.
+  // **재귀 삭제로 처리하지 않는다** — 조용한 서브트리 삭제는 손편집 사본을 덮어쓰지
+  // 않겠다는 이 도구의 기본 태도와 정반대다. 사람이 지우게 하고 여기서는 멈춘다.
+  for (const d of presentDirs) {
+    errors.push(`${id}: ${rel(path.join(destDir, d))}/ is a directory — checks/lib holds flat files only; ` +
+                `remove it yourself (the tool never deletes a subtree)`);
+  }
 
   // 기록이 없을 때. 매핑된 사본이 전부 canonical 과 바이트 동일하면 잃을 내용이 없으므로
   // 기록만 새로 쓴다 — Task 2 가 사본을 심고 이 도구가 처음 도는 부트스트랩이 정확히 이
@@ -106,12 +125,11 @@ function planCapability(id, files, opts = {}) {
       return sha256(fs.readFileSync(path.join(destDir, f))) !== sha256(fs.readFileSync(src));
     });
     if (unprovable.length) {
-      return {
-        id,
-        errors: [`${id}: ${rel(destDir)}/ has copies but no ${HASH_FILE} — provenance unknown ` +
-                 `for ${unprovable.join(', ')}; restore the record, or delete those copies and rebuild`],
-        ops,
-      };
+      // 위에서 모은 디렉터리 에러를 버리지 않는다. 조기 반환이 errors 를 새로 만들면
+      // 같은 트리에 두 문제가 있을 때 한쪽이 사라져 한 번 더 돌아야 드러난다.
+      errors.push(`${id}: ${rel(destDir)}/ has copies but no ${HASH_FILE} — provenance unknown ` +
+                  `for ${unprovable.join(', ')}; restore the record, or delete those copies and rebuild`);
+      return { id, errors, ops };
     }
   }
 
@@ -188,10 +206,25 @@ function applyCapability(plan) {
   return actions;
 }
 
+const KNOWN_FLAGS = ['--check', '--prune'];
+
 // 사람이 읽는 출력은 전부 stderr 로 간다. 이 도구는 prepack 으로도 도는데, 그때
 // stdout 은 `npm pack --json` 의 것이다 — 한 줄이라도 섞으면 JSON 파싱이 깨진다.
 // (실측: stdout 에 쓰면 pack 계약 테스트가 `Unexpected token 'b', "build-capa"...` 로 죽는다.)
 function main(argv) {
+  // 알 수 없는 인자는 **닫아서 실패한다.** 이 도구의 기본 모드는 쓰기이고 --check 만
+  // 읽기이므로, opts 를 argv.includes 로만 만들면 오타 하나가 모드를 뒤집는다 —
+  // 실측: drift 된 트리에서 `--chek` 이 사본과 기록을 둘 다 쓰고 exit 0 로 끝났다.
+  // "--check 는 아무것도 쓰지 않는다"가 이 도구의 대표 계약인데, 그 계약을 가장 싸게
+  // 무력화하는 경로가 오타다.
+  const unknown = argv.filter((a) => !KNOWN_FLAGS.includes(a));
+  if (unknown.length) {
+    process.stderr.write(`build-capabilities: unknown argument${unknown.length > 1 ? 's' : ''}: ${unknown.join(' ')}\n`);
+    process.stderr.write(`  known flags: ${KNOWN_FLAGS.join(', ')}\n`);
+    process.stderr.write('  write-mode is the default — refusing to run rather than let a typo build\n');
+    process.exit(2);
+  }
+
   const opts = { check: argv.includes('--check'), prune: argv.includes('--prune') };
   const plans = [];
   const errors = [];
@@ -200,6 +233,28 @@ function main(argv) {
     plans.push(plan);
     errors.push(...plan.errors);
   }
+
+  // 표 밖의 사본 디렉터리. LIB_MAP 만 순회하면 표에 없는 id 의 checks/lib/ 은 이 도구에게
+  // **보이지 않는다** — 실측으로 그 트리는 --check 가 `in sync`, npm pack 이 그 파일을
+  // 싣고, 그런데 설치 프리플라이트는 거부했다. 배포는 되는데 설치는 안 되는 tarball 이다.
+  // bin/triple-crown.cjs 의 프리플라이트는 이미 "capabilities/ 에 실제로 있는 것"을
+  // 검사 대상의 정의로 삼는다(설계 결정 A3). 도구도 같은 정의를 쓴다 — 두 목록이
+  // 갈라지는 순간이 M1b 가 capability 를 아홉으로 쪼개는 중간 상태 그 자체다.
+  //
+  // 에러 수집 단계에 둔다. 여기서 곧장 exit 하면 표 안의 정상 수정분이 이미 적용된 뒤
+  // 멈추는 부분 적용이 되살아난다 — 2-패스 규율이 막는 바로 그것이다.
+  const capsRoot = path.join(REPO_ROOT, 'capabilities');
+  const capIds = fs.existsSync(capsRoot)
+    ? fs.readdirSync(capsRoot, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort()
+    : [];
+  for (const id of capIds) {
+    if (Object.prototype.hasOwnProperty.call(LIB_MAP, id)) continue;
+    if (!fs.existsSync(path.join(capsRoot, id, 'checks', 'lib'))) continue;
+    errors.push(`${id}: capabilities/${id}/checks/lib/ exists but '${id}' is not a key of LIB_MAP — ` +
+                `add it to LIB_MAP and rebuild, or delete that directory; ` +
+                `otherwise the copy ships unchecked and the install preflight refuses it`);
+  }
+
   const actions = [];
   if (!errors.length && !opts.check) {
     for (const plan of plans) if (plan.destDir) actions.push(...applyCapability(plan));
