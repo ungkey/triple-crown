@@ -46,6 +46,8 @@
     "test": "python tests/run_installer_smoke.py && python tests/run_v061_l0.py",
     "test:l1": "node -e \"const n=require('fs').readdirSync('e2e/contract',{recursive:true}).filter(f=>String(f).endsWith('.test.cjs')).length;if(!n)throw new Error('L1 gate found no *.test.cjs under e2e/contract - refusing to report a vacuous pass')\" && node --test \"e2e/contract/**/*.test.cjs\"",
     "build:caps": "node scripts/build-capabilities.cjs",
-    "pack:check": "npm pack --dry-run"
+    "pack:check": "npm pack --dry-run",
+    "prepack": "node scripts/build-capabilities.cjs",
+    "prepublishOnly": "node -e \"const v=require('fs').readFileSync('VERSION','utf8').trim();if(v.includes('-'))throw new Error('refusing to publish prerelease VERSION '+v)\" && node scripts/build-capabilities.cjs --check && node -e \"const s=require('child_process').execSync('git status --porcelain',{encoding:'utf8'});if(s.trim())throw new Error('refusing to publish from a dirty tree:\\n'+s)\""
   }
 }
