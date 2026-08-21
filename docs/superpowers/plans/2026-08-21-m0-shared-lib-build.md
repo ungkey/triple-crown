@@ -358,9 +358,19 @@ Expected: L1 전부 PASS · 파이썬 스모크 전부 `PASS …` · 마지막 �
 git add VERSION package.json capabilities/triple-superpowers/capability.json \
         capabilities/triple-gstack/capability.json capabilities/triple-crown-guide/capability.json \
         tests/run_installer_smoke.py tests/run_npx_tarball_smoke.py tests/run_bash_installer_smoke.py \
-        e2e/contract/install-entrypoints.test.cjs e2e/contract/version-consistency.test.cjs
+        e2e/contract/install-entrypoints.test.cjs e2e/contract/version-consistency.test.cjs \
+        e2e/contract/home-root-refusal.test.cjs
 git commit -m "chore: enter v0.7 prerelease (0.7.0-dev) and lock main against distribution"
+git diff --exit-code
 ```
+
+> **`home-root-refusal.test.cjs` 를 빠뜨리지 않는다.** Step 5가 고치는 6곳 중 다섯은
+> 파이썬 스모크와 `install-entrypoints` 지만, 여섯 번째가 이 L1 파일이다. 빠뜨리면
+> Step 7의 `npm run test:l1` 은 **더티 워크트리에서 돌아 통과**하고 커밋된 HEAD 만
+> 무플래그로 남는다. 그 커밋을 새로 체크아웃하면 최상단 프리릴리스 펜스가 먼저 터져
+> `did not match /$HOME/` 로 죽고, Task 7 Step 2의 `git status --short` 빈 출력
+> 요구도 깨진다. `git diff --exit-code` 가 그 누락을 커밋 직후에 잡는다 — 스테이징
+> 목록을 손으로 대조하는 것보다 확실하다. (Codex 적대적 리뷰 지적.)
 
 ---
 
@@ -1183,6 +1193,9 @@ const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 function pack(repo) {
   return cp.spawnSync(NPM, ['pack', '--dry-run', '--json'], { cwd: repo, encoding: 'utf8' });
 }
+function publish(repo, extra = []) {
+  return cp.spawnSync(NPM, ['publish', '--dry-run', ...extra], { cwd: repo, encoding: 'utf8' });
+}
 
 test('prepack refreshes the copies so a normally modified canonical still packs (§4.4 row 3)', () => {
   const repo = copyRepo('crew-pack-drift-');
@@ -1236,12 +1249,38 @@ test('a hand-edited copy blocks npm pack — prepack is a gate, not a formality'
   assert.notStrictEqual(r.status, 0, 'npm pack must not succeed when prepack refuses');
   assert.match(`${r.stdout}${r.stderr}`, /hand-edited/);
 });
+
+test('a prerelease VERSION is refused by the publish gate, even behind --tag', () => {
+  // 실측 세 가지. (1) `npm publish --dry-run` 은 prepublishOnly 를 **실제로** 돌린다.
+  // (2) 도달 불가 레지스트리(--registry http://127.0.0.1:1)로도 exit 0 이므로 dry-run 은
+  //     네트워크를 타지 않는다 — 인증도 오프라인 CI 도 문제되지 않는다.
+  // (3) npm 자체는 프리릴리스의 latest 배포만 막고 `--tag next` 로는 exit 0 이다.
+  //     그래서 --tag 를 명시적으로 넣어 우리 게이트만 남긴 상태로 판정한다.
+  // `Error: ` 접두사가 **반드시** 필요하다. npm 은 실패한 스크립트의 명령줄을 그대로
+  // 되울리는데 그 줄에 `'refusing to publish prerelease VERSION '+v` 라는 소스가 들어
+  // 있어서, 접두사 없는 정규식은 게이트가 **열린** 경우에도 매치된다 — 실측에서 거짓
+  // 통과가 실제로 났다(릴리스 버전 판정에 2줄 매치).
+  const repo = copyRepo('crew-publish-fence-');
+  const refused = publish(repo, ['--tag', 'next']);
+  assert.notStrictEqual(refused.status, 0, 'a prerelease VERSION must not publish, not even behind --tag');
+  assert.match(`${refused.stdout}${refused.stderr}`,
+    /Error: refusing to publish prerelease VERSION 0\.7\.0-dev/);
+
+  // 릴리스 버전에서 펜스가 **열리는지**도 본다. 통과 여부 전체를 단언하지는 않는다 —
+  // copyRepo 는 .git 을 제외하므로 사본에서는 뒤따르는 더티 트리 검사가
+  // `fatal: not a git repository` 로 죽는다(실측). 이 테스트의 대상은 첫 단계다.
+  const released = copyRepo('crew-publish-release-');
+  fs.writeFileSync(path.join(released, 'VERSION'), '0.7.0\n');
+  const opened = publish(released, ['--tag', 'next']);
+  assert.doesNotMatch(`${opened.stdout}${opened.stderr}`, /Error: refusing to publish prerelease/,
+    'a release VERSION must clear the prerelease fence');
+});
 ```
 
 - [ ] **Step 2: 테스트가 실패하는지 확인**
 
 Run: `node --test e2e/contract/pack-contract.test.cjs`
-Expected: 첫 테스트 FAIL — `prepack did not refresh the copies` (아직 `prepack`이 없어 사본이 낡은 채 남는다). 두 번째는 PASS.
+Expected: 첫 테스트 FAIL — `prepack did not refresh the copies` (아직 `prepack`이 없어 사본이 낡은 채 남는다). 두 번째는 PASS. 네 번째(배포 펜스)도 FAIL — `prepublishOnly`가 아직 없어 프리릴리스가 그대로 나간다.
 
 - [ ] **Step 3: `prepack` 연결**
 
@@ -1256,10 +1295,26 @@ Expected: 첫 테스트 FAIL — `prepack did not refresh the copies` (아직 `p
 같은 `scripts`에 **배포 청결 게이트**도 넣는다:
 
 ```json
-    "prepublishOnly": "node scripts/build-capabilities.cjs --check && node -e \"const s=require('child_process').execSync('git status --porcelain',{encoding:'utf8'});if(s.trim())throw new Error('refusing to publish from a dirty tree:\\n'+s)\"",
+    "prepublishOnly": "node -e \"const v=require('fs').readFileSync('VERSION','utf8').trim();if(v.includes('-'))throw new Error('refusing to publish prerelease VERSION '+v)\" && node scripts/build-capabilities.cjs --check && node -e \"const s=require('child_process').execSync('git status --porcelain',{encoding:'utf8'});if(s.trim())throw new Error('refusing to publish from a dirty tree:\\n'+s)\"",
 ```
 
 > **`prepublishOnly`는 `prepack`보다 먼저 돈다** (npm publish 생명주기: `prepublishOnly` → `prepack` → `prepare` → `publish`). 순서가 핵심이다 — `prepack`이 사본을 조용히 갱신해 버리기 **전에** "커밋된 트리가 이미 동기화 상태였는가"를 묻는 것이 이 게이트의 요점이다. 안 걸면 리뷰도 커밋도 안 된 생성물이 tarball에 실릴 수 있다. `npm pack`에는 걸리지 않으므로 개발 중 pack 은 여전히 자유롭다.
+
+> **첫 단계가 프리릴리스 거부인 이유.** Task 1의 커밋 메시지는 `lock main against
+> distribution`이라고 주장하는데, 설계 §4.5 계층 2는 **설치 시점** 펜스일 뿐이라
+> 배포 자체는 아무도 안 막는다. `package.json`의 `version`도 Step 4에서 같이
+> `0.7.0-dev`가 되므로 `npm publish`는 그대로 나간다 — `private`도 아니고
+> `publishConfig.access`는 `public`이며 `docs/INSTALLER.md:366`이 실제로
+> `npm publish --access public`을 안내한다.
+>
+> npm 자체 방어가 있긴 하다. 실측: `package.json`이 프리릴리스면 `npm publish`가
+> `You must specify a tag using --tag when publishing a prerelease version`으로 거부한다.
+> 그러나 그건 `latest` dist-tag 하나만 지키고, **`--tag next` 한 방에 뚫린다** —
+> 실측 `npm publish --dry-run --tag next` → **exit 0**. 그 구멍을 닫는 것은 이 단계뿐이다.
+>
+> 하이픈 판정식은 §4.5 계층 2와 **같은 규칙**이다. 릴리스 커밋에서 하이픈이 사라지면
+> 게이트가 저절로 열리므로 나중에 되돌릴 코드가 없다. 셋 중 가장 싸고 가장 근본적이라
+> 맨 앞에 둔다. (Codex 적대적 리뷰 지적.)
 
 - [ ] **Step 4: 테스트가 통과하는지 확인**
 
@@ -1270,7 +1325,7 @@ node --test e2e/contract/pack-contract.test.cjs
 npm pack --dry-run 2>&1 | grep 'npm notice' | grep -c 'checks/lib'
 ```
 
-Expected: PASS **3건**. `grep -c`가 **4** (사본 3 + `LIB-HASH.json`).
+Expected: PASS **4건**. `grep -c`가 **4** (사본 3 + `LIB-HASH.json`).
 
 > `npm notice` 필터를 거치는 이유: `prepack` 출력도 `2>&1` 로 합쳐지는데 그 줄에도
 > `checks/lib` 가 들어간다. 실측상 사본이 낡은 상태에서 세면 4가 아니라 6이 나온다.
@@ -1624,7 +1679,7 @@ M-1 자기 검토가 남긴 두 구멍을 닫는다 — **CI가 없어 L1 green�
   "scripts": {
     "build:caps": "node scripts/build-capabilities.cjs",
     "prepack": "node scripts/build-capabilities.cjs",
-    "prepublishOnly": "node scripts/build-capabilities.cjs --check && node -e \"const s=require('child_process').execSync('git status --porcelain',{encoding:'utf8'});if(s.trim())throw new Error('refusing to publish from a dirty tree:\\n'+s)\"",
+    "prepublishOnly": "node -e \"const v=require('fs').readFileSync('VERSION','utf8').trim();if(v.includes('-'))throw new Error('refusing to publish prerelease VERSION '+v)\" && node scripts/build-capabilities.cjs --check && node -e \"const s=require('child_process').execSync('git status --porcelain',{encoding:'utf8'});if(s.trim())throw new Error('refusing to publish from a dirty tree:\\n'+s)\"",
     "test:l1": "node -e \"const n=require('fs').readdirSync('e2e/contract',{recursive:true}).filter(f=>String(f).endsWith('.test.cjs')).length;if(!n)throw new Error('L1 gate found no *.test.cjs under e2e/contract - refusing to report a vacuous pass')\" && node --test \"e2e/contract/**/*.test.cjs\"",
     "test": "npm run test:l1 && python tests/run_installer_smoke.py && python tests/run_installed_lib_smoke.py && python tests/run_v061_l0.py",
     "test:pack": "npm pack && python tests/run_npx_tarball_smoke.py",
@@ -1840,7 +1895,7 @@ Expected: `v0.7.0-m0`이 목록에 있고 HEAD에 붙어 있다.
   3. **`version-consistency`의 §4.5 계층 1 테스트가 중복.** 출하본 `install-entrypoints.test.cjs:30`이 같은 불변식을 `install.sh`·`install.ps1` 양쪽으로 이미 검사한다. 같은 단언이 두 파일에 있으면 한쪽만 고치고 green을 본다 → 신규 파일에서 뺐다. 이 파일 책임은 `VERSION`==`package.json`==`capability.json` 하나다.
   4. **프리릴리스 펜스에 걸리는 곳이 파이썬 4곳만이 아니다.** `home-root-refusal.test.cjs`의 두 호출도 무플래그라, `VERSION`을 올리면 최상단 펜스가 먼저 터져 `$HOME` 펜스에 닿지 못한다 — L1이 `did not match /\$HOME/`로 죽는다. Task 1 Step 5에 2곳을 더했다(총 6곳). 반대로 `prerelease-fence.test.cjs:43`은 M-1이 이미 `VERSION` 기준으로 기대를 뒤집게 써 둬서 손대지 않는다.
   5. **Task 5의 프리플라이트 삽입 위치.** M-1이 `install()` 최상단에 exit 4 펜스 2개(프리릴리스 빌드, `$HOME` 루트)를 넣어서 "프로젝트 존재 검사 바로 뒤"라는 초안 지시가 그 사이를 갈랐다. 펜스 **뒤** · `const actions=[` **앞**으로 바꿨고, Before 블록을 출하본 전문으로 교체해 대조 가능하게 했다.
-- **테스트 누적:** Task 1 → +1, Task 2 → +4, Task 3 → +16, Task 4 → +3, Task 5 → +7. 기준선은 **42건**이다 — `aa9aad5`(detect exit-0 · verbatim symlink 수정)가 4건을 더한 뒤의 값이고, 계획 초안이 쓴 38은 그 커밋 이전 값이다. 따라서 **L1 +31건 = 73건**. 여기에 설치 후 소비자 실행 스모크 **1건**이 파이썬 쪽에 추가된다 (실제 설치를 하므로 L1이 아니다).
+- **테스트 누적:** Task 1 → +1, Task 2 → +4, Task 3 → +16, Task 4 → +4, Task 5 → +7. 기준선은 **42건**이다 — `aa9aad5`(detect exit-0 · verbatim symlink 수정)가 4건을 더한 뒤의 값이고, 계획 초안이 쓴 38은 그 커밋 이전 값이다. 따라서 **L1 +32건 = 74건**. 여기에 설치 후 소비자 실행 스모크 **1건**이 파이썬 쪽에 추가된다 (실제 설치를 하므로 L1이 아니다).
 
 ---
 
@@ -1856,6 +1911,7 @@ Expected: `v0.7.0-m0`이 목록에 있고 HEAD에 붙어 있다.
 | Section 3 테스트 | issues_found | 3 — C1 언매핑 삭제 분기 미실행·조용함 · C2 게이트 차단 단언 부재 2건 · C3 에러 경로 4건 미검증 (신규 분기 커버리지 73%) |
 | Section 4 성능 | clean | 0 — `copyRepo` 13ms 실측(저장소 1.1MB/106파일), L1 14회 ≈ 200ms |
 | Outside voice (Codex, `model_reasoning_effort=high`) | issues_found | 10 — 합의 3 (B5·A1·C1) / 신규 6 (N1~N6) / 전략 1 (조기 기계화) |
+| 2차 적대적 리뷰 (Codex, `--base aa9aad5`) | needs-attention | 2 — X1 Task 1 Step 8 스테이징 누락 · X2 `prepublishOnly`가 프리릴리스 배포를 안 막음. **둘 다 실측 확인 후 반영** |
 
 **실측으로 검증한 것** — 판정을 근거 없이 올리지 않았다:
 
@@ -1869,6 +1925,12 @@ Expected: `v0.7.0-m0`이 목록에 있고 HEAD에 붙어 있다.
 | M1a가 `LIB_MAP` 키를 먼저 깨는가 | **깬다.** 설계 §5 표 — M1a가 `triple-gstack` → `crew-quality` |
 | L1 현재 건수 | **42** (`aa9aad5` 이후) |
 | 저장소 심볼릭 링크 | 0건 — `copyRepo`의 `verbatimSymlinks` 미지정은 현재 무해 |
+| Step 5가 `home-root-refusal.test.cjs`를 고치는가 | **고친다** (계획서 `:114`·`:238`, 두 호출). Step 8 `git add` 목록에는 없었다 |
+| `npm publish --dry-run`이 `prepublishOnly`를 도는가 | **돈다.** 프리릴리스 게이트로 exit 1, stderr에 `Error: refusing to publish prerelease VERSION 0.7.0-dev` |
+| npm 자체가 프리릴리스 배포를 막는가 | **부분만.** 무태그는 `You must specify a tag using --tag`로 거부되지만 `--tag next`는 **exit 0** |
+| `npm publish --dry-run`이 레지스트리를 타는가 | **안 탄다.** `--registry http://127.0.0.1:1`로도 exit 0 — 인증·오프라인 CI 무관 |
+| `.git` 없는 사본에서 더티 트리 검사 | `fatal: not a git repository`로 죽는다 — 그래서 L1은 첫 단계(펜스 개폐)만 단언한다 |
+| 배포 게이트 실행 시간 | 거부 208ms · 통과 368ms — L1 예산 안 |
 
 **반영 결과** — 결정 11건 전부 이 문서에 적용:
 
@@ -1889,15 +1951,19 @@ Expected: `v0.7.0-m0`이 목록에 있고 HEAD에 붙어 있다.
 | N6 | 배포 청결 게이트 `prepublishOnly` | Task 4 Step 3 · Task 6 Step 1 |
 | N4 | 설치된 런타임 무결성 → **M1d 이월** | 범위 밖 항목 (소유자 M1d) |
 | T2 | Windows CI 잡 제거 | Task 6 · 범위 밖 항목 (소유자 M1a) |
+| X1 | Task 1 Step 8에 `home-root-refusal.test.cjs` 추가 + `git diff --exit-code` | Task 1 Step 8 |
+| X2 | `prepublishOnly` 첫 단계에 프리릴리스 `VERSION` 거부 | Task 4 Step 3 · Task 6 Step 1 · `pack-contract` +1 |
 
-**테스트 누적 변화:** L1 신규 **+20 → +31** (Task 3 9→16, Task 4 2→3, Task 5 4→7). 기준선 42 위에 **73건**. 파이썬 스모크 +1.
+**테스트 누적 변화:** L1 신규 **+20 → +32** (Task 3 9→16, Task 4 2→4, Task 5 4→7). 기준선 42 위에 **74건**. 파이썬 스모크 +1.
 
 **CODEX 흡수:** 합의 3건은 이미 리뷰가 독립 도달한 항목(교차 확인). 신규 6건 중 5건 채택, 1건(N4) 명시 이월. 전략 지적(조기 기계화)은 설계 §4.1의 시퀀싱 결정 및 D2 사용자 확정과 충돌하므로 **재논의하지 않는다** — Codex는 M1a~M1d 로드맵을 보지 못했다.
+
+**2차 적대적 리뷰 흡수 (`--base aa9aad5`):** 1차는 대상이 `main` 브랜치 diff로 잡혀 **빈 diff**를 받았고(Codex 자평 "the supplied branch diff is empty") 결과 없이 프로세스가 죽었다. base를 계획서 두 커밋 직전(`aa9aad5`)으로 지정해 재실행했다. 나온 2건은 둘 다 이 리뷰가 **놓친 것**이다 — X1은 Step 5가 6번째 지점으로 뒤늦게 추가된 L1 파일이라 스테이징 목록에 반영되지 않았고, X2는 `prepublishOnly`를 넣을 때 동기화·더티 트리 축만 보고 버전 축을 보지 않았다. 다만 X2의 심각도 서술은 실측으로 정정된다: npm 자체가 `latest` 배포는 이미 막으므로 "그냥 배포된다"가 아니라 "`--tag` 하나로 뚫린다"가 정확하다. 게이트가 필요하다는 결론은 그대로다.
 
 **CROSS-MODEL TENSION:** T2(Windows CI)만 발생. 계획서는 "조용히 빼면 안 고쳐진다", Codex는 "영구 allowed-to-fail은 빨간 잡음". D15에서 잡 제거 + 명시 TODO로 양쪽 우려를 동시에 해소. 나머지는 긴장 없음.
 
 **남은 저심각도 (이 계획 범위 밖, M-1 출하본 소관):** `v0.6.5` 태그가 릴리스 커밋 `a3e2063`이 아니라 `45cfae9`에 있다 · `docs/INSTALL.md` 제목 버전을 아무 테스트도 보지 않는다.
 
-**VERDICT: APPROVED WITH CHANGES APPLIED** — 11건 전부 사용자 승인 후 이 문서에 반영 완료. 착수 전 남은 것은 계획서 커밋뿐이다. push 금지 제약 유효.
+**VERDICT: APPROVED WITH CHANGES APPLIED** — 1차 11건 + 2차 적대적 리뷰 2건(X1·X2), 전부 사용자 승인 후 이 문서에 반영 완료. 착수 전 남은 것은 계획서 커밋뿐이다. push 금지 제약 유효.
 
 NO UNRESOLVED DECISIONS
