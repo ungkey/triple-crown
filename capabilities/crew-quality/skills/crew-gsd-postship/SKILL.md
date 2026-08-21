@@ -33,8 +33,30 @@ This skill does not create another PR and must never invoke gstack `/ship`.
 
 ## 1. Resolve phase and capability
 
-Resolve `CREW_CAP` and `PHASE_DIR` using the same pattern as other Crew
-skills.
+Resolve the capability directory in this order:
+
+```bash
+if [ -d ".gsd/capabilities/crew-quality" ]; then
+  CREW_CAP=".gsd/capabilities/crew-quality"
+elif [ -d "$HOME/.gsd/capabilities/crew-quality" ]; then
+  CREW_CAP="$HOME/.gsd/capabilities/crew-quality"
+elif [ -d "capabilities/crew-quality" ]; then
+  CREW_CAP="capabilities/crew-quality"
+else
+  echo "BLOCKED: crew-quality capability directory not found"
+  exit 1
+fi
+```
+
+Use the first positional `$ARGUMENTS` token as a phase number/path when present.
+Resolve it with:
+
+```bash
+PHASE_TOKEN=${PHASE_NUMBER:-$(printf '%s' "$ARGUMENTS" | awk '{print $1}')}
+PHASE_DIR=$(node "$CREW_CAP/checks/lib/resolve-phase-dir.cjs" "$PHASE_TOKEN")
+```
+
+If phase resolution fails, stop with `BLOCKED` rather than guessing.
 
 ## 2. Capture the GSD-created release
 

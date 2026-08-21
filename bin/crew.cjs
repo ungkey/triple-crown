@@ -717,7 +717,13 @@ async function main() {
   if(opts.command==='install') return install(root,opts);
   fail(`unknown command: ${opts.command}`,2);
 }
-main().catch(err=>{
-  process.stderr.write(`Crew installer: ${err.message}\n`);
-  process.exit(err.exitCode || 1);
-});
+// 설치 순서를 소유하는 배열은 계약 테스트와 L2 픽스처가 읽어야 한다. 그런데 이 파일을
+// require 하면 CLI 가 그대로 돌아버리므로 main() 은 직접 실행일 때만 부른다.
+module.exports = { CAPABILITIES };
+
+if (require.main === module) {
+  main().catch(err=>{
+    process.stderr.write(`Crew installer: ${err.message}\n`);
+    process.exit(err.exitCode || 1);
+  });
+}
