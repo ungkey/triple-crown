@@ -1,7 +1,7 @@
 {
   "id": "triple-gstack",
   "role": "feature",
-  "version": "0.6.5",
+  "version": "0.7.0-dev",
   "title": "Triple Crown gstack Quality, Security & Release Bridge",
   "description": "Adds GSD-owned ship authorization, release/deployment evidence, and safe post-ship adapters for gstack canary, document-release, and retro.",
   "tier": "full",

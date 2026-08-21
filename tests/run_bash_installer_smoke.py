@@ -11,6 +11,8 @@ def run(cmd,cwd,env=None):
         raise AssertionError(f"{cmd}\nOUT={p.stdout}\nERR={p.stderr}")
     return p
 
+# main 은 v0.7 재구성 기간 내내 프리릴리스 VERSION 을 달고 있다(설계 §4.5 계층 2).
+# 이 스모크는 "배포 가능한가"가 아니라 "설치 동작이 온전한가"를 보므로 펜스를 명시적으로 연다.
 def main():
     root=Path(tempfile.mkdtemp(prefix="tc-bash-release-"))
     home=root/"home";home.mkdir()
@@ -28,7 +30,7 @@ def main():
         env["HOME"]=str(home);env["USERPROFILE"]=str(home)
         env["TRIPLE_GSD_BIN"]=str(FAKE)
         env["TRIPLE_CROWN_ALLOW_UNSUPPORTED_NODE"]="1"
-        p=run(["bash",str(ROOT/"install.sh"),"--yes","--no-bootstrap","--no-ship-guard","--project",str(project)],project,env)
+        p=run(["bash",str(ROOT/"install.sh"),"--yes","--no-bootstrap","--no-ship-guard","--allow-prerelease","--project",str(project)],project,env)
         assert "installed successfully" in p.stdout
         assert (project/".triple-crown"/"VERSION").exists()
         print("PASS bash-local-installer")

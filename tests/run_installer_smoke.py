@@ -39,11 +39,13 @@ def env_for(home):
     e["TRIPLE_CROWN_ALLOW_UNSUPPORTED_NODE"]="1"
     return e
 
+# main 은 v0.7 재구성 기간 내내 프리릴리스 VERSION 을 달고 있다(설계 §4.5 계층 2).
+# 이 스모크는 "배포 가능한가"가 아니라 "설치 동작이 온전한가"를 보므로 펜스를 명시적으로 연다.
 def main():
     root,home,project=fixture()
     try:
         env=env_for(home)
-        p=run(["node",str(CLI),"install","--project",str(project),"--yes","--no-bootstrap"],ROOT,env)
+        p=run(["node",str(CLI),"install","--project",str(project),"--yes","--no-bootstrap","--allow-prerelease"],ROOT,env)
         assert "installed successfully" in p.stdout
         expected_version=(ROOT/"VERSION").read_text().strip()
         assert (project/".triple-crown"/"VERSION").read_text().strip()==expected_version
@@ -76,7 +78,7 @@ def main():
             assert (skills/name/".triple-crown-skill").exists(),f"{name}: ownership marker missing"
 
         # Idempotent reinstall should not duplicate routing/hook registration.
-        run(["node",str(CLI),"install","--project",str(project),"--yes","--no-bootstrap"],ROOT,env)
+        run(["node",str(CLI),"install","--project",str(project),"--yes","--no-bootstrap","--allow-prerelease"],ROOT,env)
         text=(project/"CLAUDE.md").read_text()
         assert text.count("<!-- triple-crown:managed-routing:start -->")==1
         settings=json.loads((project/".claude"/"settings.json").read_text())

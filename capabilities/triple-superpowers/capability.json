@@ -1,7 +1,7 @@
 {
   "id": "triple-superpowers",
   "role": "feature",
-  "version": "0.6.5",
+  "version": "0.7.0-dev",
   "title": "Triple Crown Superpowers Executor Policy",
   "description": "Injects selected Superpowers engineering disciplines into GSD executors while leaving planning, spawning, scheduling, worktrees, verification ownership, and shipping with GSD.",
   "tier": "full",
