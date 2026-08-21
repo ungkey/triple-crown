@@ -6,23 +6,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const cp = require('child_process');
-
-const ROOT = path.join(__dirname, '..', '..');
-
-function copyPackage() {
-  const pkg = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-prerelease-'));
-  fs.cpSync(ROOT, pkg, {
-    recursive: true,
-    filter: (src) => {
-      const parts = src.split(path.sep);
-      return !parts.includes('.git') && !parts.includes('node_modules');
-    },
-  });
-  return pkg;
-}
+const { ROOT, copyRepo } = require('./helpers/repo.cjs');
 
 test('prerelease VERSION refuses install without --allow-prerelease', () => {
-  const pkg = copyPackage();
+  const pkg = copyRepo('crew-prerelease-');
   fs.writeFileSync(path.join(pkg, 'VERSION'), '0.7.0-test\n');
   const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-proj-'));
   const run = (args) => cp.spawnSync(
