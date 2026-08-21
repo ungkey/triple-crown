@@ -3,7 +3,8 @@ from pathlib import Path
 import os, tempfile, subprocess, shutil, json, sys
 
 ROOT=Path(__file__).resolve().parents[1]
-TGZ=ROOT/"triple-crown-workflow-installer-0.6.4.tgz"
+EXPECTED_VERSION=(ROOT/"VERSION").read_text().strip()
+TGZ=ROOT/f"triple-crown-workflow-installer-{EXPECTED_VERSION}.tgz"
 FAKE=ROOT/"tests"/"fake-gsd.cjs"
 
 def run(cmd,cwd,env=None):
@@ -43,7 +44,7 @@ def main():
             "--project",str(project),"--yes","--no-bootstrap","--no-ship-guard"
         ],project,env)
         assert "installed successfully" in p.stdout
-        assert (project/".triple-crown"/"VERSION").read_text().strip()=="0.6.4"
+        assert (project/".triple-crown"/"VERSION").read_text().strip()==EXPECTED_VERSION
         rows=json.loads((project/".fake-gsd-capabilities.json").read_text())
         assert {x["id"] for x in rows}=={"triple-superpowers","triple-gstack","triple-crown-guide"}
         print("PASS npx-local-tarball-install")

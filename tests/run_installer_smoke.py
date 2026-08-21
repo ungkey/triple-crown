@@ -45,7 +45,8 @@ def main():
         env=env_for(home)
         p=run(["node",str(CLI),"install","--project",str(project),"--yes","--no-bootstrap"],ROOT,env)
         assert "installed successfully" in p.stdout
-        assert (project/".triple-crown"/"VERSION").read_text().strip()=="0.6.4"
+        expected_version=(ROOT/"VERSION").read_text().strip()
+        assert (project/".triple-crown"/"VERSION").read_text().strip()==expected_version
         rows=json.loads((project/".fake-gsd-capabilities.json").read_text())
         ids={x["id"] for x in rows}
         assert ids=={"triple-superpowers","triple-gstack","triple-crown-guide"},ids
