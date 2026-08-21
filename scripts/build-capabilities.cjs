@@ -34,13 +34,13 @@ const HASH_FILE = 'LIB-HASH.json';
 // 어느 capability 가 어느 공유 lib 을 쓰는가.
 //
 // 이 표를 처음 건드리는 것은 M1b 가 아니라 **M1a** 다 — 설계 §5 표대로 M1a 가
-// triple-gstack 을 crew-quality 로 1:1 개명한다. 그 기계적 치환은 이 키,
+// crew-quality 을 crew-quality 로 1:1 개명한다. 그 기계적 치환은 이 키,
 // capabilities/<id>/checks/lib/ 경로, 그리고 lib-hash.test.cjs 의 git restore 정규식을
 // **한 커밋에서 같이** 옮겨야 한다. M1b 는 그 뒤에 crew-quality 를 9개로 쪼개며 표를
 // 늘린다. 표에서 빠진 참조는 e2e/contract/lib-hash.test.cjs 의 LIB_MAP 완전성
 // 테스트가 잡는다.
 const LIB_MAP = {
-  'triple-gstack': ['repo-state-lib.cjs', 'evidence-store.cjs', 'resolve-phase-dir.cjs'],
+  'crew-quality': ['repo-state-lib.cjs', 'evidence-store.cjs', 'resolve-phase-dir.cjs'],
 };
 
 const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
@@ -237,7 +237,7 @@ function main(argv) {
   // 표 밖의 사본 디렉터리. LIB_MAP 만 순회하면 표에 없는 id 의 checks/lib/ 은 이 도구에게
   // **보이지 않는다** — 실측으로 그 트리는 --check 가 `in sync`, npm pack 이 그 파일을
   // 싣고, 그런데 설치 프리플라이트는 거부했다. 배포는 되는데 설치는 안 되는 tarball 이다.
-  // bin/triple-crown.cjs 의 프리플라이트는 이미 "capabilities/ 에 실제로 있는 것"을
+  // bin/crew.cjs 의 프리플라이트는 이미 "capabilities/ 에 실제로 있는 것"을
   // 검사 대상의 정의로 삼는다(설계 결정 A3). 도구도 같은 정의를 쓴다 — 두 목록이
   // 갈라지는 순간이 M1b 가 capability 를 아홉으로 쪼개는 중간 상태 그 자체다.
   //

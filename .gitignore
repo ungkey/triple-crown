@@ -6,12 +6,12 @@ yarn-error.log*
 # `npm pack` output — releases are published, not committed.
 *.tgz
 
-# ── Triple Crown install output ───────────────────────────────────────────────
-# Written into a TARGET project by `triple-crown install`. If this repository is
+# ── Crew install output ───────────────────────────────────────────────
+# Written into a TARGET project by `crew install`. If this repository is
 # ever used as its own install target these must not be committed.
-.triple-crown/
-.triple-crown.tmp-*/
-.triple-crown.backup-*/
+.crew/
+.crew.tmp-*/
+.crew.backup-*/
 
 # ── GSD project state ─────────────────────────────────────────────────────────
 .gsd/
@@ -23,8 +23,8 @@ yarn-error.log*
 # `.claude/settings.json` is shared configuration and may be committed on purpose;
 # everything below is per-machine or installer-generated.
 .claude/settings.local.json
-.claude/hooks/triple-crown-ship-guard.cjs
-.claude/skills/gsd-triple-*/
+.claude/hooks/crew-ship-guard.cjs
+.claude/skills/crew-*/
 .claude/.gsd-*
 
 # ── Test / scratch output ─────────────────────────────────────────────────────

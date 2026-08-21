@@ -12,13 +12,13 @@ test('the shared libs live in lib/ and nowhere else as an original', () => {
   for (const f of SHARED) {
     assert.ok(fs.existsSync(path.join(ROOT, 'lib', f)), `lib/${f} must be the canonical copy`);
     // 이동 전 위치에 남아 있으면 두 원본이 공존한다 — 정확히 이 상태가 §4 가 없애려는 것이다.
-    assert.ok(!fs.existsSync(path.join(ROOT, 'capabilities', 'triple-gstack', 'checks', f)),
-      `capabilities/triple-gstack/checks/${f} must have moved into lib/`);
+    assert.ok(!fs.existsSync(path.join(ROOT, 'capabilities', 'crew-quality', 'checks', f)),
+      `capabilities/crew-quality/checks/${f} must have moved into lib/`);
   }
 });
 
 test('every bundled copy is byte-identical to its canonical lib', () => {
-  const dir = path.join(ROOT, 'capabilities', 'triple-gstack', 'checks', 'lib');
+  const dir = path.join(ROOT, 'capabilities', 'crew-quality', 'checks', 'lib');
   for (const f of SHARED) {
     assert.deepStrictEqual(
       fs.readFileSync(path.join(dir, f)),

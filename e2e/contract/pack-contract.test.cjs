@@ -84,7 +84,7 @@ test('a hand-edited copy blocks npm pack — prepack is a gate, not a formality'
   // 그대로 배포되는데, 그 회귀를 잡는 것은 이 단언뿐이다.
   const repo = copyRepo('crew-pack-blocked-');
   fs.appendFileSync(
-    path.join(repo, 'capabilities', 'triple-gstack', 'checks', 'lib', 'repo-state-lib.cjs'),
+    path.join(repo, 'capabilities', 'crew-quality', 'checks', 'lib', 'repo-state-lib.cjs'),
     '\n// hand edit\n');
   const r = pack(repo);
   assert.notStrictEqual(r.status, 0, 'npm pack must not succeed when prepack refuses');

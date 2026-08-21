@@ -11,7 +11,7 @@ const server = http.createServer((req,res) => {
   res.setHeader('content-type','text/html; charset=utf-8');
 
   if (url.pathname === '/') {
-    res.end(page(`<h1>Triple Crown Fixture</h1><a href="/login">Login</a> <a href="/dashboard">Dashboard</a>`));
+    res.end(page(`<h1>Crew Fixture</h1><a href="/login">Login</a> <a href="/dashboard">Dashboard</a>`));
     return;
   }
   if (url.pathname === '/login' && req.method === 'GET') {

@@ -8,7 +8,7 @@ When `.planning/STATE.md` exists:
 PR / remote ship owner = GSD
 ```
 
-gstack `/ship` is not part of the Triple Crown lifecycle for that project.
+gstack `/ship` is not part of the Crew lifecycle for that project.
 
 ## Why prompt routing alone is insufficient
 
@@ -29,10 +29,10 @@ glab mr merge
 
 ## GSD ship authorization
 
-At `ship:pre`, Triple Crown writes:
+At `ship:pre`, Crew writes:
 
 ```text
-.planning/.triple-crown/ship-auth.json
+.planning/.crew/ship-auth.json
 ```
 
 It contains:
@@ -113,7 +113,7 @@ The shareable project setting is installed in:
 and invokes:
 
 ```text
-.claude/hooks/triple-crown-ship-guard.cjs
+.claude/hooks/crew-ship-guard.cjs
 ```
 
 Use `scripts/install-claude-ship-guard.cjs` to merge it into an existing project

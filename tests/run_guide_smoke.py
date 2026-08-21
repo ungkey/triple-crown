@@ -3,11 +3,11 @@ from pathlib import Path
 import tempfile, shutil, subprocess, json, hashlib, os
 
 ROOT=Path(__file__).resolve().parents[1]
-GUIDE=ROOT/"capabilities"/"triple-crown-guide"/"checks"/"workflow-guide.cjs"
+GUIDE=ROOT/"capabilities"/"crew-guide"/"checks"/"workflow-guide.cjs"
 
 def run(root,*args):
     env=os.environ.copy()
-    env["TRIPLE_CROWN_GUIDE_DISABLE_PROBES"]="1"
+    env["CREW_GUIDE_DISABLE_PROBES"]="1"
     p=subprocess.run(["node",str(GUIDE),*args,"--json"],cwd=root,text=True,capture_output=True,env=env)
     if p.returncode!=0:
         raise AssertionError(f"guide failed {args}\nOUT={p.stdout}\nERR={p.stderr}")
@@ -135,7 +135,7 @@ def scenario_review():
     try:
         write_plan(phase);mark_plan(phase);summary(phase)
         s=run(root,"status")
-        assert_eq(s["next"]["command"],"/gsd-triple-gstack-code-review 1","review next")
+        assert_eq(s["next"]["command"],"/crew-gsd-review 1","review next")
         return "PASS guide-review-next"
     finally: shutil.rmtree(root,ignore_errors=True)
 
@@ -164,7 +164,7 @@ def scenario_deploy_mismatch():
         write_plan(phase);mark_plan(phase);summary(phase);review(phase);qa(phase);verification(phase);security(phase);release(phase,False)
         s=run(root,"status")
         assert_eq(s["blocker"]["stage"],"deploy","deploy blocker")
-        assert_eq(s["next"]["command"],"/gsd-triple-gstack-release-observe 1","deploy recovery")
+        assert_eq(s["next"]["command"],"/crew-gsd-release 1","deploy recovery")
         return "PASS guide-deployment-mismatch"
     finally: shutil.rmtree(root,ignore_errors=True)
 
@@ -173,7 +173,7 @@ def scenario_canary():
     try:
         write_plan(phase);mark_plan(phase);summary(phase);review(phase);qa(phase);verification(phase);security(phase);release(phase,True)
         s=run(root,"status")
-        assert_eq(s["next"]["command"],"/gsd-triple-gstack-release-observe 1 --canary","canary next")
+        assert_eq(s["next"]["command"],"/crew-gsd-release 1 --canary","canary next")
         canary(phase)
         s=run(root,"status")
         assert_eq(s["next"]["command"],"/gsd-progress --next","phase complete next")
@@ -183,7 +183,7 @@ def scenario_canary():
 def main():
     for fn in [scenario_plan_review,scenario_execute,scenario_review,scenario_qa_gap,scenario_ship,scenario_deploy_mismatch,scenario_canary]:
         print(fn())
-    print("PASS Triple Crown workflow guide smoke")
+    print("PASS Crew workflow guide smoke")
 
 if __name__=="__main__":
     main()

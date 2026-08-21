@@ -1,4 +1,4 @@
-## Triple Crown Development Ownership
+## Crew Development Ownership
 
 The human has explicitly chosen this routing policy for projects controlled by GSD.
 
@@ -45,7 +45,7 @@ Before GSD project initialization:
 - use gstack `/office-hours` and product review where useful.
 
 After GSD creates an approved PLAN:
-- run gstack `/plan-eng-review` interactively when the Triple Crown plan-review
+- run gstack `/plan-eng-review` interactively when the Crew plan-review
   gate requests it;
 - after the interactive review is complete and the PLAN is settled, run the
   marker command printed by the gate.
@@ -53,7 +53,7 @@ After GSD creates an approved PLAN:
 In GSD_CONTROLLED mode:
 - do not automatically invoke gstack `/ship`;
 - GSD owns ship;
-- gstack `/review` may run at GSD `execute:post` through the Triple Crown wrapper;
+- gstack `/review` may run at GSD `execute:post` through the Crew wrapper;
 - that wrapper must snapshot PRE/POST repository state, invalidate stale evidence,
   and require fresh verification when review mutates source/git state;
 - `/qa-only` and `/cso` remain deferred to the next integration slice.
@@ -72,7 +72,7 @@ A lower-authority skill may raise a finding, but it may not silently overwrite a
 higher-authority decision.
 
 
-### Triple Crown v0.4 QA and security
+### Crew v0.4 QA and security
 
 After successful mutation-aware gstack code review:
 - run report-only gstack `qa-only`, never `qa`, in the default lifecycle;
@@ -80,7 +80,7 @@ After successful mutation-aware gstack code review:
 - seed QA issues into the canonical GSD UAT `## Gaps` structure;
 - leave source remediation to GSD gap planning/execution.
 
-Run gstack CSO as an independent security lens according to Triple Crown risk
+Run gstack CSO as an independent security lens according to Crew risk
 classification. Do not disable or replace GSD's native security capability.
 Both GSD SECURITY.md and GSTACK-SECURITY.json may independently block ship.
 
@@ -88,7 +88,7 @@ A QA or security report from a different workspace digest is stale and must not
 authorize verification or shipping.
 
 
-### Triple Crown v0.5 ship ownership
+### Crew v0.5 ship ownership
 
 When `.planning/STATE.md` exists:
 
@@ -104,7 +104,7 @@ When `.planning/STATE.md` exists:
 - A PR being created is not proof of deployment.
 
 
-### Triple Crown v0.6.1 workflow orientation
+### Crew v0.6.1 workflow orientation
 
 When the user asks any equivalent of:
 - "where are we?"
@@ -112,20 +112,20 @@ When the user asks any equivalent of:
 - "what is next?"
 - "why are we blocked?"
 - "how do I resume?"
-- "show Triple Crown status/help"
+- "show Crew status/help"
 
 do not reconstruct lifecycle state from chat memory.
 
-Prefer the read-only Triple Crown guide:
+Prefer the read-only Crew guide:
 
 ```text
-/gsd-triple-crown
-/gsd-triple-crown next
-/gsd-triple-crown resume
-/gsd-triple-crown help <topic>
+/crew-gsd
+/crew-gsd next
+/crew-gsd resume
+/crew-gsd help <topic>
 ```
 
-The guide reads durable `.planning` / Triple Crown artifacts and recommends the
+The guide reads durable `.planning` / Crew artifacts and recommends the
 owning command. It does not execute lifecycle work.
 
 For canonical GSD-only progress/routing, `/gsd-progress` remains authoritative
@@ -144,5 +144,5 @@ Next owner: <GSD | gstack adapter | release observer>
 Next: <exact command or prerequisite>
 ```
 
-Derive this from durable artifacts or `/gsd-triple-crown`, not from conversational
+Derive this from durable artifacts or `/crew-gsd`, not from conversational
 memory. Do not auto-run the next lifecycle command merely to produce the footer.

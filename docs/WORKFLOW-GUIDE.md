@@ -1,4 +1,4 @@
-# Triple Crown Workflow Guide v0.6.1
+# Crew Workflow Guide v0.6.1
 
 목적은 간단합니다.
 
@@ -11,7 +11,7 @@
 
 를 매번 다시 추론하지 않게 만드는 것입니다.
 
-Triple Crown Guide는 **read-only navigation layer**입니다. 새로운 scheduler나
+Crew Guide는 **read-only navigation layer**입니다. 새로운 scheduler나
 orchestrator가 아닙니다.
 
 ---
@@ -21,19 +21,19 @@ orchestrator가 아닙니다.
 ### 현재 상태
 
 ```text
-/gsd-triple-crown
+/crew-gsd
 ```
 
 또는:
 
 ```text
-/gsd-triple-crown status
+/crew-gsd status
 ```
 
 출력 예:
 
 ```text
-Triple Crown Status
+Crew Status
 
 Project: /repo/app
 Phase: 3 (03-auth)
@@ -54,7 +54,7 @@ Latest durable artifact: .planning/phases/03-auth/GSTACK-QA.json
 NEXT: /gsd-verify-work 3
 WHY:  GSD goal verification/UAT is not yet passed.
 
-Help: /gsd-triple-crown help <topic>
+Help: /crew-gsd help <topic>
 GSD native: /gsd-progress [--next | --do "..." | --forensic]
 ```
 
@@ -63,7 +63,7 @@ GSD native: /gsd-progress [--next | --do "..." | --forensic]
 ## 다음 행동만 알고 싶을 때
 
 ```text
-/gsd-triple-crown next
+/crew-gsd next
 ```
 
 예:
@@ -75,7 +75,7 @@ WHY: Canonical GSD verification/UAT contains gaps.
 
 Guide는 직접 실행을 시작하지 않습니다.
 
-사용자가 명시적으로 다음 명령을 실행하면 GSD 또는 해당 Triple Crown adapter가
+사용자가 명시적으로 다음 명령을 실행하면 GSD 또는 해당 Crew adapter가
 원래 책임 범위에서 작업합니다.
 
 ---
@@ -83,7 +83,7 @@ Guide는 직접 실행을 시작하지 않습니다.
 ## 중간에 며칠 쉬었다가 돌아왔을 때
 
 ```text
-/gsd-triple-crown resume
+/crew-gsd resume
 ```
 
 출력:
@@ -104,7 +104,7 @@ Resume command
 ## 막혔을 때
 
 ```text
-/gsd-triple-crown help recovery
+/crew-gsd help recovery
 ```
 
 기본 원칙:
@@ -126,7 +126,7 @@ missing/stale gate
 을 사용합니다.
 
 현재 GSD의 `/gsd-progress`는 프로젝트 진행상황뿐 아니라 `--next`,
-`--do "..."`, `--forensic`을 제공하므로 Triple Crown Guide가 이를 복제하지
+`--do "..."`, `--forensic`을 제공하므로 Crew Guide가 이를 복제하지
 않고 external quality/release layer만 추가합니다.
 
 ---
@@ -167,44 +167,44 @@ Guide는 현재 Phase에서 다음 10개 checkpoint를 봅니다.
 # Help topics
 
 ```text
-/gsd-triple-crown help workflow
-/gsd-triple-crown help plan
-/gsd-triple-crown help execute
-/gsd-triple-crown help review
-/gsd-triple-crown help qa
-/gsd-triple-crown help verify
-/gsd-triple-crown help gaps
-/gsd-triple-crown help security
-/gsd-triple-crown help ship
-/gsd-triple-crown help release
-/gsd-triple-crown help canary
-/gsd-triple-crown help recovery
-/gsd-triple-crown help e2e
+/crew-gsd help workflow
+/crew-gsd help plan
+/crew-gsd help execute
+/crew-gsd help review
+/crew-gsd help qa
+/crew-gsd help verify
+/crew-gsd help gaps
+/crew-gsd help security
+/crew-gsd help ship
+/crew-gsd help release
+/crew-gsd help canary
+/crew-gsd help recovery
+/crew-gsd help e2e
 ```
 
 ## 전체 흐름 지도
 
 ```text
-/gsd-triple-crown map
+/crew-gsd map
 ```
 
 ## Artifact 설명
 
 ```text
-/gsd-triple-crown artifacts
+/crew-gsd artifacts
 ```
 
 ## 프로젝트 설치 상태
 
 ```text
-/gsd-triple-crown doctor
+/crew-gsd doctor
 ```
 
 이는 v0.6의 host compatibility doctor와 다릅니다.
 
 ```text
-/gsd-triple-crown doctor
-  = 현재 프로젝트에 Triple Crown capability/guard가 준비됐는지
+/crew-gsd doctor
+  = 현재 프로젝트에 Crew capability/guard가 준비됐는지
 
 node e2e/doctor.cjs
   = Node/GSD/Claude/gstack/Superpowers 등 target host compatibility
@@ -247,7 +247,7 @@ node e2e/doctor.cjs
 ## code review 없음/blocked
 
 ```text
-/gsd-triple-gstack-code-review N
+/crew-gsd-review N
 ```
 
 ## review가 코드를 수정했고 evidence가 stale
@@ -259,7 +259,7 @@ Guide는 stale gate를 bypass하는 명령을 제시하지 않습니다.
 ## QA 없음
 
 ```text
-/gsd-triple-gstack-qa-only N
+/crew-gsd-qa N
 ```
 
 ## QA/UAT gap
@@ -279,7 +279,7 @@ Guide는 stale gate를 bypass하는 명령을 제시하지 않습니다.
 ## external CSO 미완료
 
 ```text
-/gsd-triple-gstack-cso N
+/crew-gsd-sec N
 ```
 
 GSD native security는 별개입니다.
@@ -293,13 +293,13 @@ GSD native security는 별개입니다.
 ## PR은 있지만 deployment evidence 없음
 
 ```text
-/gsd-triple-gstack-release-observe N
+/crew-gsd-release N
 ```
 
 실제 deployment가 생기면:
 
 ```text
-/gsd-triple-gstack-release-observe N \
+/crew-gsd-release N \
   --deployment-url <url> \
   --deployed-sha <sha> \
   --canary
@@ -345,7 +345,7 @@ read state
 
 입니다.
 
-따라서 기존 Triple Crown의 핵심 불변식:
+따라서 기존 Crew의 핵심 불변식:
 
 ```text
 One lifecycle owner = GSD

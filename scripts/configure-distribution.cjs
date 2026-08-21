@@ -19,7 +19,7 @@ function parse(argv){
   return out;
 }
 function help(){
-  console.log(`Configure Triple Crown distribution metadata.
+  console.log(`Configure Crew distribution metadata.
 
 Usage:
   node scripts/configure-distribution.cjs --repo owner/repo --package @scope/name
@@ -35,7 +35,7 @@ if(args.pkg) {
   pkg.name=args.pkg;
   const basename=args.pkg.includes('/') ? args.pkg.split('/').pop() : args.pkg;
   pkg.bin=pkg.bin || {};
-  pkg.bin[basename]='bin/triple-crown.cjs';
+  pkg.bin[basename]='bin/crew.cjs';
 }
 fs.writeFileSync(pkgPath,JSON.stringify(pkg,null,2)+'\n');
 
@@ -44,7 +44,7 @@ if(args.pkg){
     const p=path.join(ROOT,rel);
     if(!fs.existsSync(p))continue;
     let s=fs.readFileSync(p,'utf8');
-    s=s.replace(/triple-crown-workflow-installer/g,args.pkg);
+    s=s.replace(/crew-harness/g,args.pkg);
     fs.writeFileSync(p,s);
   }
 }
@@ -53,7 +53,7 @@ if(args.repo){
     const p=path.join(ROOT,rel);
     if(!fs.existsSync(p))continue;
     let s=fs.readFileSync(p,'utf8');
-    s=s.replace(/REPLACE_WITH_OWNER\/triple-crown-workflow/g,args.repo);
+    s=s.replace(/REPLACE_WITH_OWNER\/crew-workflow/g,args.repo);
     fs.writeFileSync(p,s);
   }
 }

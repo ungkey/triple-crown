@@ -1,0 +1,28 @@
+{
+  "id": "crew-guide",
+  "role": "feature",
+  "version": "0.7.0-dev",
+  "title": "Crew Workflow Guide",
+  "description": "Read-only situational dashboard and help router for Crew. Shows current phase, quality/release checkpoints, blockers, and the next GSD-owned action without becoming another orchestrator.",
+  "tier": "standard",
+  "requires": [],
+  "engines": {
+    "gsd": ">=1.10.0 <2.0.0"
+  },
+  "runtimeCompat": {
+    "supported": [
+      "*"
+    ],
+    "unsupported": [],
+    "notes": {
+      "*": "Crew validates the concrete Claude Code/gstack/Superpowers host dependencies in its installer/doctor. The GSD capability overlay itself avoids concrete runtime-registry coupling."
+    }
+  },
+  "skills": ["crew-gsd"],
+  "agents": [],
+  "hooks": [],
+  "config": {},
+  "steps": [],
+  "contributions": [],
+  "gates": []
+}

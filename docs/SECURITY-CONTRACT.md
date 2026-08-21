@@ -1,13 +1,13 @@
 # Security Contract v0.4
 
-Triple Crown uses two independent security layers.
+Crew uses two independent security layers.
 
 ## GSD native security
 
 GSD owns its native planning threat model, `secure-phase`, canonical `SECURITY.md`,
 and native `ship:pre` `threats_open == 0` gate.
 
-Triple Crown does not disable or replace this layer.
+Crew does not disable or replace this layer.
 
 ## gstack CSO
 
@@ -37,5 +37,4 @@ do not count as open.
 
 Any later source change makes the external security report stale and blocks ship.
 
-Final ship therefore requires all active GSD gates plus the independent Triple
-Crown security gate.
+Final ship therefore requires all active GSD gates plus the independent Crew security gate.

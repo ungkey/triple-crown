@@ -1,4 +1,4 @@
-# Triple Crown v0.6.5 — One-command Installer + Workflow Guide
+# Crew v0.6.5 — One-command Installer + Workflow Guide
 
 ## Install
 
@@ -22,7 +22,7 @@ from inside Claude Code:
 
 ### Install into a project — one command
 
-Run this **from the project you want Triple Crown to manage** (the installer
+Run this **from the project you want Crew to manage** (the installer
 targets the current git root):
 
 ```bash
@@ -39,7 +39,7 @@ If your npx version cannot infer the binary from the repository name, name the
 package and the binary explicitly:
 
 ```bash
-npx --yes --package github:ungkey/triple-crown#v0.6.5 triple-crown install --yes
+npx --yes --package github:ungkey/triple-crown#v0.6.5 crew install --yes
 ```
 
 ### Install from a clone
@@ -47,7 +47,7 @@ npx --yes --package github:ungkey/triple-crown#v0.6.5 triple-crown install --yes
 ```bash
 git clone https://github.com/ungkey/triple-crown.git
 cd /path/to/your/project
-bash /path/to/triple-crown/install.sh --yes
+bash /path/to/crew/install.sh --yes
 ```
 
 `install.sh` runs the adjacent checkout directly, so no network fetch happens in
@@ -68,15 +68,15 @@ irm https://raw.githubusercontent.com/ungkey/triple-crown/v0.6.5/install.ps1 -Ou
 .\install.ps1 --yes
 ```
 
-Both default to `ungkey/triple-crown` and honour `TRIPLE_CROWN_REF` to select a
-branch or tag (default: the shipped release tag), `TRIPLE_CROWN_REPO` to point at a fork, and
-`TRIPLE_CROWN_NPM_PACKAGE` to use an npm registry package instead.
+Both default to `ungkey/triple-crown` and honour `CREW_REF` to select a
+branch or tag (default: the shipped release tag), `CREW_REPO` to point at a fork, and
+`CREW_NPM_PACKAGE` to use an npm registry package instead.
 
 ### Install from a packed tarball
 
 ```bash
-npm pack                     # in a clone -> triple-crown-workflow-installer-0.6.5.tgz
-npx --yes --package ./triple-crown-workflow-installer-0.6.5.tgz triple-crown install --yes
+npm pack                     # in a clone -> crew-harness-0.6.5.tgz
+npx --yes --package ./crew-harness-0.6.5.tgz crew install --yes
 ```
 
 The npm registry package is not published; GitHub is the distribution channel.
@@ -85,11 +85,11 @@ The npm registry package is not published; GitHub is the distribution channel.
 
 ```text
 GSD/gstack prerequisite detection/bootstrap
-→ stable .triple-crown source copy
-→ triple-superpowers
-→ triple-gstack
-→ triple-crown-guide
-→ .claude/skills (6 Triple Crown skills)
+→ stable .crew source copy
+→ crew-discipline
+→ crew-quality
+→ crew-guide
+→ .claude/skills (6 Crew skills)
 → CLAUDE.md routing
 → Claude ship guard
 → activation verification
@@ -110,7 +110,7 @@ npx --yes github:ungkey/triple-crown#v0.6.5 doctor
 project and run:
 
 ```text
-/gsd-triple-crown
+/crew-gsd
 ```
 
 It shows the current workflow position and the next action.
@@ -122,7 +122,7 @@ npx --yes github:ungkey/triple-crown#v0.6.5 install --yes      # re-run to updat
 npx --yes github:ungkey/triple-crown#v0.6.5 uninstall --yes
 ```
 
-Uninstall removes only Triple Crown's own capability registrations, `.triple-crown/`,
+Uninstall removes only Crew's own capability registrations, `.crew/`,
 its marked skills, its `CLAUDE.md` block, and its ship-guard hook. GSD, gstack,
 and Superpowers are left installed.
 
@@ -137,7 +137,7 @@ v0.6.1은 E2E harness 위에 **read-only situational UX**를 추가합니다.
 가장 먼저 기억할 명령은 하나입니다.
 
 ```text
-/gsd-triple-crown
+/crew-gsd
 ```
 
 이 명령은 현재 phase에서:
@@ -158,18 +158,18 @@ CANARY
 의 완료/현재/대기/차단 상태를 보여주고 **다음 owner와 명령**을 제시합니다.
 
 ```text
-/gsd-triple-crown next
-/gsd-triple-crown resume
-/gsd-triple-crown help workflow
-/gsd-triple-crown help recovery
-/gsd-triple-crown map
-/gsd-triple-crown artifacts
-/gsd-triple-crown doctor
+/crew-gsd next
+/crew-gsd resume
+/crew-gsd help workflow
+/crew-gsd help recovery
+/crew-gsd map
+/crew-gsd artifacts
+/crew-gsd doctor
 ```
 
 GSD 자체의 `/gsd-progress`를 대체하지 않습니다. 최신 GSD의 progress는
 `--next`, `--do`, `--forensic`까지 제공하므로 GSD phase routing은 그대로
-GSD가 소유하고, 이 guide는 Triple Crown의 외부 quality/release checkpoint를
+GSD가 소유하고, 이 guide는 Crew의 외부 quality/release checkpoint를
 추가로 보여줍니다.
 
 빠른 참고: `WORKFLOW-QUICK-REFERENCE.md`  
@@ -180,7 +180,7 @@ GSD가 소유하고, 이 guide는 Triple Crown의 외부 quality/release checkpo
 v0.6 changes the focus from **adding another workflow feature** to
 **proving that the integration survives real upstream/runtime changes**.
 
-Triple Crown remains:
+Crew remains:
 
 ```text
 GSD          = Control Plane
@@ -229,7 +229,7 @@ node e2e/run-live.cjs --mock
 python tests/run_local_smoke.py
 ```
 
-Tests the **Triple Crown harness itself** and inherited deterministic contracts.
+Tests the **Crew harness itself** and inherited deterministic contracts.
 
 Mock GSD is deliberately not counted as real GSD compatibility evidence.
 
@@ -249,7 +249,7 @@ gsd capability list
 gsd loop render-hooks ...
 ```
 
-It then asserts the exact Triple Crown hook graph.
+It then asserts the exact Crew hook graph.
 
 ### L2 — real Claude Code semantic acceptance
 
@@ -309,7 +309,7 @@ L2 Claude semantics NOT RUNNABLE HERE
 ```
 
 This is intentionally reported as environment readiness failure, not as a
-Triple Crown compatibility pass.
+Crew compatibility pass.
 
 Current environment result:
 
@@ -388,7 +388,7 @@ and continue with `e2e/ACCEPTANCE-RUNBOOK.md`.
 
 ## Acceptance rule
 
-Triple Crown v0.6.1 should be declared **runtime compatible** only when:
+Crew v0.6.1 should be declared **runtime compatible** only when:
 
 ```text
 L0 PASS

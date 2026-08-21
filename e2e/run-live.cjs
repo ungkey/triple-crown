@@ -18,7 +18,7 @@ const outArg = (() => {
   return i >= 0 ? args[i+1] : null;
 })();
 
-function log(msg) { console.log(`[triple-crown-e2e] ${msg}`); }
+function log(msg) { console.log(`[crew-e2e] ${msg}`); }
 function fatal(stage, msg, extra = {}) {
   const err = new Error(msg);
   err.stage = stage;
@@ -32,9 +32,9 @@ function runOrFail(stage, cmd, argv, cwd, env = process.env) {
 }
 function resolveGsd() {
   if (mock) return path.join(__dirname, 'mock-gsd.cjs');
-  if (process.env.TRIPLE_GSD_BIN) return process.env.TRIPLE_GSD_BIN;
+  if (process.env.CREW_GSD_BIN) return process.env.CREW_GSD_BIN;
   const p = which('gsd');
-  if (!p) fatal('doctor','gsd command not found; set TRIPLE_GSD_BIN if needed');
+  if (!p) fatal('doctor','gsd command not found; set CREW_GSD_BIN if needed');
   return p;
 }
 function runGsd(stage, gsd, argv, cwd, env = process.env) {
@@ -44,18 +44,18 @@ function runGsd(stage, gsd, argv, cwd, env = process.env) {
   return runOrFail(stage, gsd, argv, cwd, env);
 }
 function makeFixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'triple-crown-v06-live-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-v06-live-'));
   copyTree(path.join(ROOT,'fixtures','demo-app'), root);
   mkdirp(path.join(root,'.planning','phases'));
   copyTree(path.join(ROOT,'fixtures','planning'), path.join(root,'.planning'));
   mkdirp(path.join(root,'capabilities'));
-  copyTree(path.join(ROOT,'capabilities','triple-gstack'), path.join(root,'capabilities','triple-gstack'));
-  copyTree(path.join(ROOT,'capabilities','triple-superpowers'), path.join(root,'capabilities','triple-superpowers'));
-  copyTree(path.join(ROOT,'capabilities','triple-crown-guide'), path.join(root,'capabilities','triple-crown-guide'));
+  copyTree(path.join(ROOT,'capabilities','crew-quality'), path.join(root,'capabilities','crew-quality'));
+  copyTree(path.join(ROOT,'capabilities','crew-discipline'), path.join(root,'capabilities','crew-discipline'));
+  copyTree(path.join(ROOT,'capabilities','crew-guide'), path.join(root,'capabilities','crew-guide'));
 
   runOrFail('fixture-git','git',['init','-q'],root);
-  runOrFail('fixture-git','git',['config','user.email','triple-crown-e2e@example.invalid'],root);
-  runOrFail('fixture-git','git',['config','user.name','Triple Crown E2E'],root);
+  runOrFail('fixture-git','git',['config','user.email','crew-e2e@example.invalid'],root);
+  runOrFail('fixture-git','git',['config','user.name','Crew E2E'],root);
   runOrFail('fixture-git','git',['checkout','-qb','phase/01-auth'],root);
   runOrFail('fixture-git','git',['add','.'],root);
   runOrFail('fixture-git','git',['commit','-qm','fixture baseline'],root);
@@ -78,7 +78,7 @@ let fixture = null;
 try {
   // Doctor first.
   const doctorEnv = {...process.env};
-  if (mock) doctorEnv.TRIPLE_GSD_BIN = path.join(__dirname,'mock-gsd.cjs');
+  if (mock) doctorEnv.CREW_GSD_BIN = path.join(__dirname,'mock-gsd.cjs');
   const doctorArgs = ['--json'];
   if (mock) doctorArgs.push('--mock');
   const doctor = exec('node',[path.join(__dirname,'doctor.cjs'),...doctorArgs],{cwd:ROOT,env:doctorEnv,timeout:30000});
@@ -91,14 +91,14 @@ try {
   log(`fixture: ${fixture}`);
 
   const gsd = resolveGsd();
-  const env = {...process.env, TRIPLE_GSD_BIN:gsd};
+  const env = {...process.env, CREW_GSD_BIN:gsd};
 
   // Initialize actual GSD project.
   const init = runGsd('gsd-init',gsd,['init'],fixture,env);
   result.stages.push({stage:'gsd-init',status:'PASS',stdout:init.stdout.trim()});
 
   // Install capabilities. --yes is required for non-interactive executable-surface consent.
-  for (const id of ['triple-superpowers','triple-gstack','triple-crown-guide']) {
+  for (const id of ['crew-discipline','crew-quality','crew-guide']) {
     const r = runGsd(
       `install-${id}`, gsd,
       ['capability','install',`./capabilities/${id}`,'--scope','project','--yes'],
@@ -109,15 +109,15 @@ try {
 
   const list = runGsd('capability-list',gsd,['capability','list','--scope','project'],fixture,env);
   const listJson = parseJsonOutput('capability-list', list.stdout);
-  for (const id of ['triple-superpowers','triple-gstack','triple-crown-guide']) {
+  for (const id of ['crew-discipline','crew-quality','crew-guide']) {
     const row = listJson.find(x => x.id === id);
     if (!row) fatal('capability-list',`${id} missing from capability list`);
     if (row.status !== 'active') fatal('capability-list',`${id} status=${row.status}; expected active`,{row});
   }
-  result.stages.push({stage:'capability-list',status:'PASS',capabilities:listJson.filter(x=>['triple-superpowers','triple-gstack','triple-crown-guide'].includes(x.id))});
+  result.stages.push({stage:'capability-list',status:'PASS',capabilities:listJson.filter(x=>['crew-discipline','crew-quality','crew-guide'].includes(x.id))});
 
   // Staged bundles must exist in project scope.
-  for (const id of ['triple-superpowers','triple-gstack','triple-crown-guide']) {
+  for (const id of ['crew-discipline','crew-quality','crew-guide']) {
     const staged = path.join(fixture,'.gsd','capabilities',id,'capability.json');
     if (!fs.existsSync(staged)) fatal('staging',`missing staged bundle: ${staged}`);
   }
@@ -125,7 +125,7 @@ try {
 
   // Read-only workflow guide must orient the fixture before any lifecycle work.
   const guideScript = path.join(
-    fixture,'.gsd','capabilities','triple-crown-guide','checks','workflow-guide.cjs'
+    fixture,'.gsd','capabilities','crew-guide','checks','workflow-guide.cjs'
   );
   const guide = runOrFail('workflow-guide','node',[guideScript,'status','--json'],fixture,env);
   const guideJson = parseJsonOutput('workflow-guide',guide.stdout);
@@ -141,7 +141,7 @@ try {
   });
 
   // Render and persist hook graph.
-  const renderDir = path.join(fixture,'.triple-crown-e2e','hooks');
+  const renderDir = path.join(fixture,'.crew-e2e','hooks');
   mkdirp(renderDir);
   const points = [
     ['plan:post','plan-post.json'],
@@ -205,4 +205,4 @@ if (result.status !== 'PASS') {
   console.error(JSON.stringify(result.failure,null,2));
   process.exit(1);
 }
-console.log('PASS Triple Crown v0.6 install/render/staging/guard contract');
+console.log('PASS Crew v0.6 install/render/staging/guard contract');

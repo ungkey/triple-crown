@@ -8,7 +8,7 @@ const cp = require('child_process');
 const { tempDir } = require('./helpers/repo.cjs');
 
 const ROOT = path.join(__dirname, '..', '..');
-const CLI = path.join(ROOT, 'bin', 'triple-crown.cjs');
+const CLI = path.join(ROOT, 'bin', 'crew.cjs');
 
 test('installer refuses $HOME as project root', () => {
   const fakeHome = tempDir('crew-home-');

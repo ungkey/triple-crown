@@ -3,8 +3,8 @@ from pathlib import Path
 import json, subprocess, tempfile, shutil
 
 ROOT=Path(__file__).resolve().parents[1]
-CHECKS=ROOT/"capabilities"/"triple-gstack"/"checks"
-GUARD=ROOT/"guards"/"triple-crown-ship-guard.cjs"
+CHECKS=ROOT/"capabilities"/"crew-quality"/"checks"
+GUARD=ROOT/"guards"/"crew-ship-guard.cjs"
 INSTALLER=ROOT/"scripts"/"install-claude-ship-guard.cjs"
 
 def run(cmd,cwd,input_text=None,ok=False):
@@ -51,11 +51,11 @@ def scenario_installer():
         settings=load(root/".claude"/"settings.json")
         assert_(settings["permissions"]["allow"]==["Read"],"existing settings lost")
         pre=settings["hooks"]["PreToolUse"]
-        matches=[g for g in pre if g.get("matcher")=="Bash" and any("triple-crown-ship-guard.cjs" in h.get("command","") for h in g.get("hooks",[]))]
+        matches=[g for g in pre if g.get("matcher")=="Bash" and any("crew-ship-guard.cjs" in h.get("command","") for h in g.get("hooks",[]))]
         assert_(len(matches)==1,"installer not idempotent")
-        cmds=[h["command"] for g in matches for h in g["hooks"] if "triple-crown-ship-guard.cjs" in h.get("command","")]
+        cmds=[h["command"] for g in matches for h in g["hooks"] if "crew-ship-guard.cjs" in h.get("command","")]
         assert_(all(c.startswith("node ") for c in cmds),f"guard must run through an explicit interpreter: {cmds}")
-        hook=root/".claude"/"hooks"/"triple-crown-ship-guard.cjs"
+        hook=root/".claude"/"hooks"/"crew-ship-guard.cjs"
         assert_(hook.exists(),"hook not copied")
         assert_(bool(hook.stat().st_mode & 0o111),"hook not executable")
         return "PASS guard-installer-idempotent"
@@ -115,7 +115,7 @@ def scenario_canary_session():
         sha=load(phase/"RELEASE.json")["effectiveReleaseSha"]
         run(["node",str(CHECKS/"release-ledger.cjs"),"record-deployment",str(phase),"--url","https://example.test","--sha",sha],root,ok=True)
         run(["node",str(CHECKS/"canary-session.cjs"),"begin",str(phase)],root,ok=True)
-        norm=phase/".triple-crown"/"canary-normalized.json";norm.parent.mkdir(exist_ok=True)
+        norm=phase/".crew"/"canary-normalized.json";norm.parent.mkdir(exist_ok=True)
         norm.write_text(json.dumps({"schema":1,"status":"pass","mode":"quick","summary":"healthy","findings":[],"evidence":[{"kind":"browser","ref":"ok"}]}),encoding="utf-8")
         run(["node",str(CHECKS/"canary-session.cjs"),"finalize",str(phase),str(norm)],root,ok=True)
         can=load(phase/"GSTACK-CANARY.json");assert_(can["status"]=="pass" and can["deployedSha"]==sha,"canary artifact incorrect")

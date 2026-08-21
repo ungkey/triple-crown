@@ -10,11 +10,11 @@ const { copyRepo, tempDir } = require('./helpers/repo.cjs');
 function install(pkg, extra = []) {
   const project = tempDir('crew-proj-');
   return cp.spawnSync(process.execPath, [
-    path.join(pkg, 'bin', 'triple-crown.cjs'), 'install',
+    path.join(pkg, 'bin', 'crew.cjs'), 'install',
     '--yes', '--dry-run', '--project', project, '--allow-prerelease', ...extra,
   ], { encoding: 'utf8' });
 }
-const libDir = (pkg) => path.join(pkg, 'capabilities', 'triple-gstack', 'checks', 'lib');
+const libDir = (pkg) => path.join(pkg, 'capabilities', 'crew-quality', 'checks', 'lib');
 
 test('a clean package passes preflight on --dry-run', () => {
   // 이 단언이 없으면 아래 세 테스트는 "설치가 원래 안 되는 것"으로도 통과한다.
@@ -66,7 +66,7 @@ test('a malformed record — bad schema, path key, or hash — is refused', () =
   const H = 'a'.repeat(64);
   const cases = [
     [{ schema: 2, generatedFrom: 'lib/', files: { 'repo-state-lib.cjs': H } }, /schema-1/],
-    [{ schema: 1, generatedFrom: 'lib/', files: { '../../bin/triple-crown.cjs': H } }, /not a plain file name/],
+    [{ schema: 1, generatedFrom: 'lib/', files: { '../../bin/crew.cjs': H } }, /not a plain file name/],
     [{ schema: 1, generatedFrom: 'lib/', files: { 'repo-state-lib.cjs': 'nothex' } }, /malformed sha256/],
   ];
   for (const [record, re] of cases) {

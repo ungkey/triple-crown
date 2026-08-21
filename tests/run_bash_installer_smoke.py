@@ -28,11 +28,11 @@ def main():
         (short/"SKILL.md").write_text("---\nname: review\n---\n")
         env=os.environ.copy()
         env["HOME"]=str(home);env["USERPROFILE"]=str(home)
-        env["TRIPLE_GSD_BIN"]=str(FAKE)
-        env["TRIPLE_CROWN_ALLOW_UNSUPPORTED_NODE"]="1"
+        env["CREW_GSD_BIN"]=str(FAKE)
+        env["CREW_ALLOW_UNSUPPORTED_NODE"]="1"
         p=run(["bash",str(ROOT/"install.sh"),"--yes","--no-bootstrap","--no-ship-guard","--allow-prerelease","--project",str(project)],project,env)
         assert "installed successfully" in p.stdout
-        assert (project/".triple-crown"/"VERSION").exists()
+        assert (project/".crew"/"VERSION").exists()
         print("PASS bash-local-installer")
     finally:
         shutil.rmtree(root,ignore_errors=True)

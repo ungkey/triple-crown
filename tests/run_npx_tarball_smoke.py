@@ -4,7 +4,7 @@ import os, tempfile, subprocess, shutil, json, sys
 
 ROOT=Path(__file__).resolve().parents[1]
 EXPECTED_VERSION=(ROOT/"VERSION").read_text().strip()
-TGZ=ROOT/f"triple-crown-workflow-installer-{EXPECTED_VERSION}.tgz"
+TGZ=ROOT/f"crew-harness-{EXPECTED_VERSION}.tgz"
 FAKE=ROOT/"tests"/"fake-gsd.cjs"
 
 def run(cmd,cwd,env=None):
@@ -29,8 +29,8 @@ def prepare():
     (short/"SKILL.md").write_text("---\nname: review\n---\n",encoding="utf-8")
     env=os.environ.copy()
     env["HOME"]=str(home); env["USERPROFILE"]=str(home)
-    env["TRIPLE_GSD_BIN"]=str(FAKE)
-    env["TRIPLE_CROWN_ALLOW_UNSUPPORTED_NODE"]="1"
+    env["CREW_GSD_BIN"]=str(FAKE)
+    env["CREW_ALLOW_UNSUPPORTED_NODE"]="1"
     return root,home,project,env
 
 # main 은 v0.7 재구성 기간 내내 프리릴리스 VERSION 을 달고 있다(설계 §4.5 계층 2).
@@ -42,14 +42,14 @@ def main():
     try:
         p=run([
             "npx","--yes","--package",str(TGZ),
-            "triple-crown","install",
+            "crew","install",
             "--allow-prerelease",
             "--project",str(project),"--yes","--no-bootstrap","--no-ship-guard"
         ],project,env)
         assert "installed successfully" in p.stdout
-        assert (project/".triple-crown"/"VERSION").read_text().strip()==EXPECTED_VERSION
+        assert (project/".crew"/"VERSION").read_text().strip()==EXPECTED_VERSION
         rows=json.loads((project/".fake-gsd-capabilities.json").read_text())
-        assert {x["id"] for x in rows}=={"triple-superpowers","triple-gstack","triple-crown-guide"}
+        assert {x["id"] for x in rows}=={"crew-discipline","crew-quality","crew-guide"}
         print("PASS npx-local-tarball-install")
     finally:
         shutil.rmtree(root,ignore_errors=True)

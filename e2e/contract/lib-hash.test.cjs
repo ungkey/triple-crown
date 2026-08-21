@@ -34,7 +34,7 @@ test('editing canonical fails --check, and one build fixes it (§4.4 rows 1-2)',
   assert.strictEqual(build(repo).status, 0, 'a normally modified canonical must build');
   assert.strictEqual(build(repo, ['--check']).status, 0, 'the build must leave the tree in sync');
   assert.deepStrictEqual(
-    fs.readFileSync(copyOf(repo, 'triple-gstack', 'repo-state-lib.cjs')),
+    fs.readFileSync(copyOf(repo, 'crew-quality', 'repo-state-lib.cjs')),
     fs.readFileSync(canonical(repo, 'repo-state-lib.cjs')));
 });
 
@@ -52,18 +52,18 @@ test('canonical can be modified twice in a row without blocking (§4.4 row 4)', 
 
 test('hand-editing a copy is refused with a restore command (§4.4 row 5)', () => {
   const repo = copyRepo('crew-handedit-');
-  fs.appendFileSync(copyOf(repo, 'triple-gstack', 'repo-state-lib.cjs'), '\n// sneaky\n');
+  fs.appendFileSync(copyOf(repo, 'crew-quality', 'repo-state-lib.cjs'), '\n// sneaky\n');
   const r = build(repo);
   assert.notStrictEqual(r.status, 0, 'a hand-edited copy must never be silently overwritten');
   assert.match(r.stderr, /hand-edited/);
-  assert.match(r.stderr, /git restore capabilities\/triple-gstack\/checks\/lib\/repo-state-lib\.cjs/);
+  assert.match(r.stderr, /git restore capabilities\/crew-quality\/checks\/lib\/repo-state-lib\.cjs/);
 });
 
 test('a missing record over untouched copies is regenerated (bootstrap)', () => {
   // 사본이 전부 canonical 과 같으면 기록은 유도 가능하다. 여기서 거부하면 Task 2 가
   // 심어 놓은 사본 위에서 도는 최초 빌드가 영영 불가능해진다.
   const repo = copyRepo('crew-bootstrap-');
-  const rec = path.join(repo, 'capabilities', 'triple-gstack', 'checks', 'lib', 'LIB-HASH.json');
+  const rec = path.join(repo, 'capabilities', 'crew-quality', 'checks', 'lib', 'LIB-HASH.json');
   fs.rmSync(rec);
   const r = build(repo);
   assert.strictEqual(r.status, 0, r.stderr);
@@ -75,7 +75,7 @@ test('a missing record over a changed copy is refused', () => {
   // 기록도 없고 사본도 다르면 도구가 만든 것인지 손으로 넣은 것인지 구분할 수단이 없다.
   // 그 상태에서 덮어쓰면 증거가 조용히 사라진다.
   const repo = copyRepo('crew-noprov-');
-  const dir = path.join(repo, 'capabilities', 'triple-gstack', 'checks', 'lib');
+  const dir = path.join(repo, 'capabilities', 'crew-quality', 'checks', 'lib');
   fs.rmSync(path.join(dir, 'LIB-HASH.json'));
   fs.appendFileSync(path.join(dir, 'evidence-store.cjs'), '\n// sneaky\n');
   const r = build(repo);
@@ -86,7 +86,7 @@ test('a missing record over a changed copy is refused', () => {
 
 test('an unmapped file with no record is refused rather than deleted', () => {
   const repo = copyRepo('crew-unmapped-');
-  const dir = path.join(repo, 'capabilities', 'triple-gstack', 'checks', 'lib');
+  const dir = path.join(repo, 'capabilities', 'crew-quality', 'checks', 'lib');
   fs.rmSync(path.join(dir, 'LIB-HASH.json'));
   fs.writeFileSync(path.join(dir, 'stowaway.cjs'), 'module.exports = {};\n');
   const r = build(repo);
@@ -96,7 +96,7 @@ test('an unmapped file with no record is refused rather than deleted', () => {
 
 test('a missing copy is rebuilt', () => {
   const repo = copyRepo('crew-missing-');
-  fs.rmSync(copyOf(repo, 'triple-gstack', 'resolve-phase-dir.cjs'));
+  fs.rmSync(copyOf(repo, 'crew-quality', 'resolve-phase-dir.cjs'));
   assert.notStrictEqual(build(repo, ['--check']).status, 0, '--check must report the gap');
   assert.strictEqual(build(repo).status, 0);
   assert.strictEqual(build(repo, ['--check']).status, 0);
@@ -127,7 +127,7 @@ test('LIB_MAP covers every shared lib a bundled script or skill reaches for', ()
 
 test('an unmapped copy is refused by default and removed only with --prune', () => {
   const repo = copyRepo('crew-unmapped-mapped-');
-  const dir = path.join(repo, 'capabilities', 'triple-gstack', 'checks', 'lib');
+  const dir = path.join(repo, 'capabilities', 'crew-quality', 'checks', 'lib');
   fs.writeFileSync(path.join(dir, 'stowaway.cjs'), 'module.exports = {};\n');
 
   const refused = build(repo);
@@ -145,7 +145,7 @@ test('a non-.cjs stowaway is refused too — the filter is by record, not by ext
   // require('./lib/helper.js') 는 CommonJS 에서 그대로 해석된다. 확장자로 거르면
   // 빌드 · --check · 설치 프리플라이트 세 검사를 전부 지나 tarball 까지 실린다.
   const repo = copyRepo('crew-stow-js-');
-  const dir = path.join(repo, 'capabilities', 'triple-gstack', 'checks', 'lib');
+  const dir = path.join(repo, 'capabilities', 'crew-quality', 'checks', 'lib');
   fs.writeFileSync(path.join(dir, 'helper.js'), 'module.exports = {};\n');
   const r = build(repo);
   assert.notStrictEqual(r.status, 0);
@@ -171,9 +171,9 @@ test('a mixed tree — one normal edit plus one hand-edited copy — is left unt
   // 목적이 반쪽만 성립한다.
   const repo = copyRepo('crew-mixed-');
   fs.appendFileSync(canonical(repo, 'evidence-store.cjs'), '\n// normal edit\n');
-  const victim = copyOf(repo, 'triple-gstack', 'evidence-store.cjs');
+  const victim = copyOf(repo, 'crew-quality', 'evidence-store.cjs');
   const before = fs.readFileSync(victim);
-  fs.appendFileSync(copyOf(repo, 'triple-gstack', 'repo-state-lib.cjs'), '\n// hand edit\n');
+  fs.appendFileSync(copyOf(repo, 'crew-quality', 'repo-state-lib.cjs'), '\n// hand edit\n');
 
   const r = build(repo);
   assert.notStrictEqual(r.status, 0, r.stdout);
@@ -192,7 +192,7 @@ test('a missing canonical lib is reported, not silently skipped', () => {
 
 test('a capability in LIB_MAP with no directory is reported', () => {
   const repo = copyRepo('crew-nocapdir-');
-  fs.rmSync(path.join(repo, 'capabilities', 'triple-gstack'), { recursive: true });
+  fs.rmSync(path.join(repo, 'capabilities', 'crew-quality'), { recursive: true });
   const r = build(repo);
   assert.notStrictEqual(r.status, 0);
   assert.match(r.stderr, /capability directory missing/);
@@ -204,8 +204,8 @@ test('reordering LIB_MAP does not make the record look stale', () => {
   const tool = path.join(repo, 'scripts', 'build-capabilities.cjs');
   const src = fs.readFileSync(tool, 'utf8');
   const reversed = src.replace(
-    "'triple-gstack': ['repo-state-lib.cjs', 'evidence-store.cjs', 'resolve-phase-dir.cjs']",
-    "'triple-gstack': ['resolve-phase-dir.cjs', 'evidence-store.cjs', 'repo-state-lib.cjs']");
+    "'crew-quality': ['repo-state-lib.cjs', 'evidence-store.cjs', 'resolve-phase-dir.cjs']",
+    "'crew-quality': ['resolve-phase-dir.cjs', 'evidence-store.cjs', 'repo-state-lib.cjs']");
   assert.notStrictEqual(reversed, src, 'the LIB_MAP literal must be substitutable');
   fs.writeFileSync(tool, reversed);
   const r = build(repo, ['--check']);
@@ -215,19 +215,19 @@ test('reordering LIB_MAP does not make the record look stale', () => {
 test('a checks/lib outside LIB_MAP is refused, not invisible', () => {
   // 실측(수정 전): LIB_MAP 에 없는 id 아래에 사본을 하나 두면 `--check` 가 `in sync` 로
   // exit 0, lib-hash 테스트 16/16 통과, `npm pack --dry-run` 이 그 파일을 싣고,
-  // 그런데 `bin/triple-crown.cjs install` 은 "checks/lib exists without a readable
+  // 그런데 `bin/crew.cjs install` 은 "checks/lib exists without a readable
   // schema-1 LIB-HASH.json" 으로 거부했다 — 배포는 되는데 설치는 안 되는 tarball.
   // 설치 프리플라이트는 capabilities/ 디렉터리 자체를 검사 대상의 정의로 삼는데(결정 A3)
   // 도구만 표를 돌고 있었다. M1b 가 capability 를 아홉으로 쪼갤 때 파일이 먼저 놓이고
   // LIB_MAP 이 나중에 갱신되는 중간 상태가 정확히 이 사각지대다.
   const repo = copyRepo('crew-stray-cap-');
-  const dir = path.join(repo, 'capabilities', 'triple-crown-guide', 'checks', 'lib');
+  const dir = path.join(repo, 'capabilities', 'crew-guide', 'checks', 'lib');
   fs.mkdirSync(dir, { recursive: true });
   fs.copyFileSync(canonical(repo, 'repo-state-lib.cjs'), path.join(dir, 'repo-state-lib.cjs'));
 
   const checked = build(repo, ['--check']);
   assert.notStrictEqual(checked.status, 0, '--check must see a copy that lives outside LIB_MAP');
-  assert.match(checked.stderr, /triple-crown-guide/);
+  assert.match(checked.stderr, /crew-guide/);
   assert.match(checked.stderr, /not a key of LIB_MAP/);
 
   const built = build(repo);
@@ -240,11 +240,11 @@ test('a stray checks/lib composes with the two-pass rule instead of half-applyin
   // 표 밖 사본을 발견하는 즉시 exit 하면, 그 앞에서 계획된 정상 수정분이 이미 적용된
   // 뒤 멈추는 부분 적용이 되살아난다. 에러 수집 단계에 두었는지를 트리로 판정한다.
   const repo = copyRepo('crew-stray-2pass-');
-  const dir = path.join(repo, 'capabilities', 'triple-crown-guide', 'checks', 'lib');
+  const dir = path.join(repo, 'capabilities', 'crew-guide', 'checks', 'lib');
   fs.mkdirSync(dir, { recursive: true });
   fs.copyFileSync(canonical(repo, 'repo-state-lib.cjs'), path.join(dir, 'repo-state-lib.cjs'));
   fs.appendFileSync(canonical(repo, 'evidence-store.cjs'), '\n// normal edit\n');
-  const victim = copyOf(repo, 'triple-gstack', 'evidence-store.cjs');
+  const victim = copyOf(repo, 'crew-quality', 'evidence-store.cjs');
   const before = fs.readFileSync(victim);
 
   const r = build(repo);
@@ -260,11 +260,11 @@ test('a directory under checks/lib is refused during planning, never rmSync-ed',
   // 앞선 copy op 는 이미 적용된 뒤라 사본은 새 canonical, LIB-HASH.json 은 옛 해시로 남았다
   // — 이 도구가 존재할 수 없다고 보장하는 사본/기록 불일치가 실제로 만들어졌다.
   const repo = copyRepo('crew-subdir-');
-  const dir = path.join(repo, 'capabilities', 'triple-gstack', 'checks', 'lib');
+  const dir = path.join(repo, 'capabilities', 'crew-quality', 'checks', 'lib');
   fs.mkdirSync(path.join(dir, 'nested'));
   fs.writeFileSync(path.join(dir, 'nested', 'stowaway.cjs'), 'module.exports = {};\n');
   fs.appendFileSync(canonical(repo, 'evidence-store.cjs'), '\n// normal edit\n');
-  const victim = copyOf(repo, 'triple-gstack', 'evidence-store.cjs');
+  const victim = copyOf(repo, 'crew-quality', 'evidence-store.cjs');
   const before = fs.readFileSync(victim);
 
   const r = build(repo, ['--prune']);
@@ -287,8 +287,8 @@ test('an unknown flag is refused instead of performing a real build', () => {
   // 대표 계약이 "--check 는 아무것도 쓰지 않는다"인 도구에서 오타 한 글자가 모드를 뒤집는다.
   const repo = copyRepo('crew-badflag-');
   fs.appendFileSync(canonical(repo, 'repo-state-lib.cjs'), '\n// drift\n');
-  const copy = copyOf(repo, 'triple-gstack', 'repo-state-lib.cjs');
-  const rec = path.join(repo, 'capabilities', 'triple-gstack', 'checks', 'lib', 'LIB-HASH.json');
+  const copy = copyOf(repo, 'crew-quality', 'repo-state-lib.cjs');
+  const rec = path.join(repo, 'capabilities', 'crew-quality', 'checks', 'lib', 'LIB-HASH.json');
   const copyBefore = fs.readFileSync(copy);
   const recBefore = fs.readFileSync(rec);
 

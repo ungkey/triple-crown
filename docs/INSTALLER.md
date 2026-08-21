@@ -1,4 +1,4 @@
-# Triple Crown v0.6.5 Installer
+# Crew v0.6.5 Installer
 
 v0.6.4 adds a single installer entry point so a user no longer has to install
 three GSD capabilities and the Claude hook manually.
@@ -13,7 +13,7 @@ orchestrator.
 After downloading:
 
 ```text
-triple-crown-workflow-installer-0.6.5.tgz
+crew-harness-0.6.5.tgz
 ```
 
 run from the target project:
@@ -21,13 +21,13 @@ run from the target project:
 ### macOS / Linux / Git Bash
 
 ```bash
-npx --yes --package /path/to/triple-crown-workflow-installer-0.6.5.tgz triple-crown install --yes
+npx --yes --package /path/to/crew-harness-0.6.5.tgz crew install --yes
 ```
 
 ### Windows PowerShell
 
 ```powershell
-npx --yes --package C:\path\to\triple-crown-workflow-installer-0.6.5.tgz triple-crown install --yes
+npx --yes --package C:\path\to\crew-harness-0.6.5.tgz crew install --yes
 ```
 
 The default install attempts to bootstrap missing GSD and gstack.
@@ -35,8 +35,8 @@ The default install attempts to bootstrap missing GSD and gstack.
 If you already installed dependencies and do not want bootstrap behavior:
 
 ```bash
-npx --yes --package ./triple-crown-workflow-installer-0.6.5.tgz \
-  triple-crown install --yes --no-bootstrap
+npx --yes --package ./crew-harness-0.6.5.tgz \
+  crew install --yes --no-bootstrap
 ```
 
 ---
@@ -46,7 +46,7 @@ npx --yes --package ./triple-crown-workflow-installer-0.6.5.tgz \
 The package skeleton currently uses:
 
 ```text
-triple-crown-workflow-installer
+crew-harness
 ```
 
 as the candidate npm name.
@@ -56,13 +56,13 @@ It has **not been published by this prototype**.
 After publishing:
 
 ```bash
-npx --yes triple-crown-workflow-installer@latest install --yes
+npx --yes crew-harness@latest install --yes
 ```
 
 Interactive terminal:
 
 ```bash
-npx triple-crown-workflow-installer@latest
+npx crew-harness@latest
 ```
 
 Without `--yes`, the CLI displays its planned write/install effects and asks for
@@ -99,12 +99,12 @@ npx --yes github:ungkey/triple-crown#v0.6.5 install --yes
 curl -fsSL https://raw.githubusercontent.com/ungkey/triple-crown/v0.6.5/install.sh | bash -s -- --yes
 ```
 
-`ungkey/triple-crown` is the built-in default; `TRIPLE_CROWN_REPO` only needs to
-be set to install from a fork. `TRIPLE_CROWN_REF` pins a tag or branch:
+`ungkey/triple-crown` is the built-in default; `CREW_REPO` only needs to
+be set to install from a fork. `CREW_REF` pins a tag or branch:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ungkey/triple-crown/v0.6.5/install.sh \
-  | TRIPLE_CROWN_REF=v0.6.5 bash -s -- --yes
+  | CREW_REF=v0.6.5 bash -s -- --yes
 ```
 
 Windows PowerShell uses the same environment variables:
@@ -114,7 +114,7 @@ irm https://raw.githubusercontent.com/ungkey/triple-crown/v0.6.5/install.ps1 -Ou
 .\install.ps1 --yes
 ```
 
-`TRIPLE_CROWN_NPM_PACKAGE` overrides both forms with an npm registry package.
+`CREW_NPM_PACKAGE` overrides both forms with an npm registry package.
 
 ---
 
@@ -127,10 +127,10 @@ The installer:
 2. detects or bootstraps GSD
 3. detects or bootstraps gstack
 4. checks Superpowers availability
-5. vendors a stable source copy into .triple-crown/
+5. vendors a stable source copy into .crew/
 6. refreshes three project GSD capabilities
 7. verifies each capability is active
-8. installs/updates the Triple Crown skills in <project>/.claude/skills/
+8. installs/updates the Crew skills in <project>/.claude/skills/
 9. installs/updates managed CLAUDE.md routing
 10. installs/updates the Claude PreToolUse ship guard
 ```
@@ -139,34 +139,34 @@ Step 8 is what makes the commands visible to Claude Code. GSD materializes a
 third-party capability skill only from the GLOBAL overlay
 (`$HOME/.gsd/capabilities`) and only when its surface-apply path runs, so a
 project-scoped `capability install` never reaches a skills root on its own.
-Triple Crown keeps the capabilities project-scoped — global ones would activate
+Crew keeps the capabilities project-scoped — global ones would activate
 their gates in every repository on the machine — and copies the skills itself:
 
 ```text
-<project>/.claude/skills/gsd-triple-crown/
-<project>/.claude/skills/gsd-triple-gstack-code-review/
-<project>/.claude/skills/gsd-triple-gstack-qa-only/
-<project>/.claude/skills/gsd-triple-gstack-cso/
-<project>/.claude/skills/gsd-triple-gstack-post-ship/
-<project>/.claude/skills/gsd-triple-gstack-release-observe/
+<project>/.claude/skills/crew-gsd/
+<project>/.claude/skills/crew-gsd-review/
+<project>/.claude/skills/crew-gsd-qa/
+<project>/.claude/skills/crew-gsd-sec/
+<project>/.claude/skills/crew-gsd-postship/
+<project>/.claude/skills/crew-gsd-release/
 ```
 
-Each directory carries a `.triple-crown-skill` ownership marker. Install refuses
+Each directory carries a `.crew-skill` ownership marker. Install refuses
 to overwrite an unmarked directory, and uninstall removes only marked ones.
 
 Installed GSD capabilities:
 
 ```text
-triple-superpowers
-triple-gstack
-triple-crown-guide
+crew-discipline
+crew-quality
+crew-guide
 ```
 
 The stable source copy is deliberate:
 
 ```text
 project/
-└── .triple-crown/
+└── .crew/
     ├── VERSION
     ├── INSTALL-MANIFEST.json
     ├── capabilities/
@@ -177,7 +177,7 @@ project/
 GSD is registered against:
 
 ```text
-./.triple-crown/capabilities/<id>
+./.crew/capabilities/<id>
 ```
 
 rather than an npm/npx temporary cache path.
@@ -204,8 +204,8 @@ Node >= 24
 npm >= 10
 ```
 
-The Triple Crown installer itself can start on older Node versions so it can
-produce a useful diagnostic, but real Triple Crown/GSD installation fails closed
+The Crew installer itself can start on older Node versions so it can
+produce a useful diagnostic, but real Crew/GSD installation fails closed
 below Node 24.
 
 ## gstack
@@ -224,7 +224,7 @@ then runs:
 ./setup --host claude --no-prefix
 ```
 
-Triple Crown intentionally selects short skill ids:
+Crew intentionally selects short skill ids:
 
 ```text
 /review
@@ -235,7 +235,7 @@ Triple Crown intentionally selects short skill ids:
 /retro
 ```
 
-because those are the default ids stored in the Triple Crown capability config.
+because those are the default ids stored in the Crew capability config.
 
 gstack setup requires Bun.
 
@@ -263,7 +263,7 @@ Claude-marketplace action.
 ## Install
 
 ```bash
-npx triple-crown-workflow-installer install
+npx crew-harness install
 ```
 
 Options:
@@ -283,7 +283,7 @@ Options:
 ## Doctor
 
 ```bash
-npx triple-crown-workflow-installer doctor
+npx crew-harness doctor
 ```
 
 Checks:
@@ -295,9 +295,9 @@ GSD capability CLI
 gstack source
 gstack short skill IDs
 Superpowers
-.triple-crown stable source
+.crew stable source
 three GSD capability activation states
-Triple Crown skills present in <project>/.claude/skills
+Crew skills present in <project>/.claude/skills
 no shadowing copies in ~/.claude/skills
 CLAUDE.md routing
 ship guard installed
@@ -307,41 +307,41 @@ ship guard registered with an explicit node interpreter
 
 `skills-installed` is the check that fails when Claude Code cannot see the
 commands. `skills-no-global-shadow` warns when a leftover
-`~/.claude/skills/gsd-triple-*` copy could take precedence over the project's.
+`~/.claude/skills/crew-*` copy could take precedence over the project's.
 
 JSON:
 
 ```bash
-npx triple-crown-workflow-installer doctor --json
+npx crew-harness doctor --json
 ```
 
 ## Workflow status
 
 ```bash
-npx triple-crown-workflow-installer status
+npx crew-harness status
 ```
 
-This invokes the installed Triple Crown guide.
+This invokes the installed Crew guide.
 
 Inside Claude Code the shorter UX remains:
 
 ```text
-/gsd-triple-crown
+/crew-gsd
 ```
 
 ## Uninstall
 
 ```bash
-npx triple-crown-workflow-installer uninstall --yes
+npx crew-harness uninstall --yes
 ```
 
 It removes:
-- Triple Crown capability registrations;
-- `.triple-crown/`;
+- Crew capability registrations;
+- `.crew/`;
 - only the skill directories under `<project>/.claude/skills/` that carry the
-  `.triple-crown-skill` marker — a hand-authored `gsd-*` skill is preserved;
-- only the managed Triple Crown routing block from `CLAUDE.md`;
-- only the Triple Crown ship-guard hook/registration.
+  `.crew-skill` marker — a hand-authored `gsd-*` skill is preserved;
+- only the managed Crew routing block from `CLAUDE.md`;
+- only the Crew ship-guard hook/registration.
 
 It does **not** uninstall GSD, gstack, or Superpowers.
 
@@ -355,8 +355,8 @@ Example:
 
 ```bash
 node scripts/configure-distribution.cjs \
-  --repo YOUR_ORG/triple-crown-workflow \
-  --package @YOUR_SCOPE/triple-crown
+  --repo YOUR_ORG/crew-workflow \
+  --package @YOUR_SCOPE/crew
 ```
 
 Then:
@@ -370,14 +370,14 @@ For an unscoped package:
 
 ```bash
 node scripts/configure-distribution.cjs \
-  --repo YOUR_ORG/triple-crown-workflow \
-  --package triple-crown-workflow-installer
+  --repo YOUR_ORG/crew-workflow \
+  --package crew-harness
 ```
 
 The generated npm tarball can be tested before publish:
 
 ```bash
-npx --yes --package ./triple-crown-workflow-installer-0.6.5.tgz triple-crown install --yes
+npx --yes --package ./crew-harness-0.6.5.tgz crew install --yes
 ```
 
 ---

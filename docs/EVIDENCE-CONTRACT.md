@@ -1,6 +1,6 @@
 # EVIDENCE Contract v0.3
 
-`EVIDENCE.json` is the Triple Crown machine-readable evidence ledger for one GSD phase.
+`EVIDENCE.json` is the Crew machine-readable evidence ledger for one GSD phase.
 
 ## Location
 
@@ -27,7 +27,7 @@
 {
   "id": "EV-...",
   "kind": "post-review-verification",
-  "producer": "triple-gstack-code-review",
+  "producer": "crew-gsd-review",
   "status": "passed",
   "validity": "current",
   "createdAt": "...",

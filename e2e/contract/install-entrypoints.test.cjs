@@ -9,14 +9,14 @@ const ROOT = path.join(__dirname, '..', '..');
 
 function shDefaultRef() {
   const m = fs.readFileSync(path.join(ROOT, 'install.sh'), 'utf8')
-    .match(/^REF="\$\{TRIPLE_CROWN_REF:-([^}]+)\}"/m);
+    .match(/^REF="\$\{CREW_REF:-([^}]+)\}"/m);
   assert.ok(m, 'install.sh default ref constant not found');
   return m[1];
 }
 
 function ps1DefaultRef() {
   const m = fs.readFileSync(path.join(ROOT, 'install.ps1'), 'utf8')
-    .match(/\$ref = if \(\$env:TRIPLE_CROWN_REF\) \{ \$env:TRIPLE_CROWN_REF \} else \{ "([^"]+)" \}/);
+    .match(/\$ref = if \(\$env:CREW_REF\) \{ \$env:CREW_REF \} else \{ "([^"]+)" \}/);
   assert.ok(m, 'install.ps1 default ref constant not found');
   return m[1];
 }
@@ -45,10 +45,10 @@ test('every documented github install example pins the bootstrap tag', () => {
   const bad = [];
   for (const p of scanned) {
     fs.readFileSync(p, 'utf8').split('\n').forEach((line, i) => {
-      for (const m of line.matchAll(/github:ungkey\/triple-crown(#[\w.\-]+)?/g)) {
+      for (const m of line.matchAll(/github:ungkey\/crew(#[\w.\-]+)?/g)) {
         if (m[1] !== `#${ref}`) bad.push(`${path.relative(ROOT, p)}:${i + 1}: ${m[0]}`);
       }
-      for (const m of line.matchAll(/raw\.githubusercontent\.com\/ungkey\/triple-crown\/([^/]+)\//g)) {
+      for (const m of line.matchAll(/raw\.githubusercontent\.com\/ungkey\/crew\/([^/]+)\//g)) {
         if (m[1] !== ref) bad.push(`${path.relative(ROOT, p)}:${i + 1}: ref=${m[1]}`);
       }
     });
@@ -57,16 +57,16 @@ test('every documented github install example pins the bootstrap tag', () => {
 });
 
 // 위 테스트는 github:/raw 경로만 본다. tgz 파일명은 그 패턴에 안 걸려서 조용히 낡는다 —
-// 실제로 bin/triple-crown.cjs:629의 help() 예시는 소스가 0.6.4일 때까지 0.6.3에 멈춰 있었다.
+// 실제로 bin/crew.cjs:629의 help() 예시는 소스가 0.6.4일 때까지 0.6.3에 멈춰 있었다.
 test('every documented tarball example names the version this tree ships as', () => {
   const version = releaseVersion();
   const scanned = ['README.md', 'docs/INSTALLER.md', 'docs/WORKFLOW-GUIDE.md',
-    'install.sh', 'install.ps1', 'bin/triple-crown.cjs']
+    'install.sh', 'install.ps1', 'bin/crew.cjs']
     .map((p) => path.join(ROOT, p)).filter((p) => fs.existsSync(p));
   const bad = [];
   for (const p of scanned) {
     fs.readFileSync(p, 'utf8').split('\n').forEach((line, i) => {
-      for (const m of line.matchAll(/triple-crown-workflow-installer-([\w.\-]+)\.tgz/g)) {
+      for (const m of line.matchAll(/crew-harness-([\w.\-]+)\.tgz/g)) {
         if (m[1] !== version) bad.push(`${path.relative(ROOT, p)}:${i + 1}: ${m[0]} (release=v${version})`);
       }
     });
@@ -74,23 +74,23 @@ test('every documented tarball example names the version this tree ships as', ()
   assert.deepStrictEqual(bad, [], 'stale tarball filenames');
 });
 
-// Neither test above catches a bare `TRIPLE_CROWN_REF=v0.6.4` literal: it isn't a
+// Neither test above catches a bare `CREW_REF=v0.6.4` literal: it isn't a
 // github:/raw path (test 3) and isn't a tgz filename (test 4). Pre-commit both
 // docs/INSTALLER.md:106's raw URL and :107's env-var override read v0.6.4 and
 // were self-consistent; a partial edit that bumps only the URL leaves a copy-paste
 // example that fetches install.sh from one tag and installs a different version.
-test('every documented TRIPLE_CROWN_REF= literal pins the version this tree ships as', () => {
+test('every documented CREW_REF= literal pins the version this tree ships as', () => {
   const version = releaseVersion();
   const scanned = ['README.md', 'docs/INSTALLER.md', 'docs/WORKFLOW-GUIDE.md',
-    'install.sh', 'install.ps1', 'bin/triple-crown.cjs']
+    'install.sh', 'install.ps1', 'bin/crew.cjs']
     .map((p) => path.join(ROOT, p)).filter((p) => fs.existsSync(p));
   const bad = [];
   for (const p of scanned) {
     fs.readFileSync(p, 'utf8').split('\n').forEach((line, i) => {
-      for (const m of line.matchAll(/TRIPLE_CROWN_REF=(v[\w.\-]+)/g)) {
+      for (const m of line.matchAll(/CREW_REF=(v[\w.\-]+)/g)) {
         if (m[1] !== `v${version}`) bad.push(`${path.relative(ROOT, p)}:${i + 1}: ${m[0]} (release=v${version})`);
       }
     });
   }
-  assert.deepStrictEqual(bad, [], 'stale TRIPLE_CROWN_REF= literals');
+  assert.deepStrictEqual(bad, [], 'stale CREW_REF= literals');
 });

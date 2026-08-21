@@ -46,22 +46,22 @@ const verify = load(`${dir}/verify-pre.json`);
 const shipPre = load(`${dir}/ship-pre.json`);
 const shipPost = load(`${dir}/ship-post.json`);
 
-requireOne(plan, {capId:'triple-gstack',kind:'gate',commandIncludes:'plan-review-current.cjs'}, 'plan-review gate');
-requireOne(wave, {capId:'triple-superpowers',kind:'contribution',into:'executor'}, 'superpowers executor contribution');
+requireOne(plan, {capId:'crew-quality',kind:'gate',commandIncludes:'plan-review-current.cjs'}, 'plan-review gate');
+requireOne(wave, {capId:'crew-discipline',kind:'contribution',into:'executor'}, 'superpowers executor contribution');
 
 order(execPost, [
-  'triple-gstack-code-review',
-  'triple-gstack-qa-only',
-  'triple-gstack-cso',
+  'crew-gsd-review',
+  'crew-gsd-qa',
+  'crew-gsd-sec',
 ], 'execute:post quality chain');
 
-requireOne(verify, {capId:'triple-gstack',kind:'gate',commandIncludes:'verify-ready.cjs'}, 'verify evidence gate');
-requireOne(verify, {capId:'triple-gstack',kind:'gate',commandIncludes:'qa-ready.cjs'}, 'QA ready gate');
+requireOne(verify, {capId:'crew-quality',kind:'gate',commandIncludes:'verify-ready.cjs'}, 'verify evidence gate');
+requireOne(verify, {capId:'crew-quality',kind:'gate',commandIncludes:'qa-ready.cjs'}, 'QA ready gate');
 
-requireOne(shipPre, {capId:'triple-gstack',kind:'gate',commandIncludes:'security-ready.cjs'}, 'external security ship gate');
-requireOne(shipPre, {capId:'triple-gstack',kind:'gate',commandIncludes:'ship-guard-control.cjs'}, 'GSD ship authorization gate');
+requireOne(shipPre, {capId:'crew-quality',kind:'gate',commandIncludes:'security-ready.cjs'}, 'external security ship gate');
+requireOne(shipPre, {capId:'crew-quality',kind:'gate',commandIncludes:'ship-guard-control.cjs'}, 'GSD ship authorization gate');
 
-const post = requireOne(shipPost, {capId:'triple-gstack',kind:'step',skill:'triple-gstack-post-ship'}, 'post-ship release adapter');
+const post = requireOne(shipPost, {capId:'crew-quality',kind:'step',skill:'crew-gsd-postship'}, 'post-ship release adapter');
 if (post.onError !== 'skip') fail('ship:post adapter must be best-effort onError=skip');
 
 console.log('PASS hook contract: plan -> execute -> verify -> ship surfaces');

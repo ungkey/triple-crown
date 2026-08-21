@@ -57,7 +57,7 @@ function initGitRepo(dir) {
   const git = (...args) => {
     const r = cp.spawnSync('git', [
       '-c', 'init.defaultBranch=main',
-      '-c', 'user.name=triple-crown-test',
+      '-c', 'user.name=crew-test',
       '-c', 'user.email=test@example.invalid',
       '-c', 'commit.gpgsign=false',
       '-C', dir, ...args,

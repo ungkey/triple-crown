@@ -20,12 +20,12 @@ function cmdVersion(command, args = ['--version']) {
   return (r.stdout || r.stderr).trim();
 }
 function resolveGsd() {
-  if (process.env.TRIPLE_GSD_BIN) return process.env.TRIPLE_GSD_BIN;
+  if (process.env.CREW_GSD_BIN) return process.env.CREW_GSD_BIN;
   if (mock) return path.join(__dirname, 'mock-gsd.cjs');
   return which('gsd');
 }
 function detectGstack() {
-  const env = process.env.TRIPLE_GSTACK_HOME;
+  const env = process.env.CREW_GSTACK_HOME;
   const candidates = [
     env,
     path.join(os.homedir(), '.claude', 'skills', 'gstack'),
@@ -36,8 +36,8 @@ function detectGstack() {
   return null;
 }
 function detectSuperpowers() {
-  if (process.env.TRIPLE_SUPERPOWERS_HOME) {
-    const root = process.env.TRIPLE_SUPERPOWERS_HOME;
+  if (process.env.CREW_SUPERPOWERS_HOME) {
+    const root = process.env.CREW_SUPERPOWERS_HOME;
     if (fs.existsSync(root)) return root;
   }
   const roots = [
@@ -122,7 +122,7 @@ if (gstackRoot) {
     { root: gstackRoot, version, missingSkills: missing }));
 } else {
   checks.push(result('gstack', mock ? 'WARN' : 'FAIL',
-    'gstack installation not found (set TRIPLE_GSTACK_HOME if installed elsewhere)'));
+    'gstack installation not found (set CREW_GSTACK_HOME if installed elsewhere)'));
 }
 
 const spRoot = detectSuperpowers();
@@ -134,7 +134,7 @@ if (spRoot) {
     { root: spRoot, missingSkills: missing }));
 } else {
   checks.push(result('superpowers', mock ? 'WARN' : 'FAIL',
-    'Superpowers installation not found (set TRIPLE_SUPERPOWERS_HOME to its skills directory)'));
+    'Superpowers installation not found (set CREW_SUPERPOWERS_HOME to its skills directory)'));
 }
 
 const hardFails = checks.filter(c => c.status === 'FAIL');

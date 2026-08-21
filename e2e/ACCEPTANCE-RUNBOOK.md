@@ -1,4 +1,4 @@
-# Triple Crown v0.6 E2E Acceptance Runbook
+# Crew v0.6 E2E Acceptance Runbook
 
 v0.6 has three test levels. Do not collapse them into one "all tests pass" claim.
 
@@ -9,7 +9,7 @@ v0.6 has three test levels. Do not collapse them into one "all tests pass" claim
 Purpose:
 
 ```text
-Does the Triple Crown E2E harness itself work?
+Does the Crew E2E harness itself work?
 ```
 
 Run:
@@ -48,7 +48,7 @@ The mock must never be cited as evidence for those.
 Purpose:
 
 ```text
-Does current GSD actually accept and activate Triple Crown?
+Does current GSD actually accept and activate Crew?
 ```
 
 ## Prerequisites
@@ -84,9 +84,9 @@ Do not continue until all load-bearing checks are PASS.
 If installations live outside standard paths:
 
 ```bash
-TRIPLE_GSD_BIN=/path/to/gsd
-TRIPLE_GSTACK_HOME=/path/to/gstack
-TRIPLE_SUPERPOWERS_HOME=/path/to/superpowers/skills
+CREW_GSD_BIN=/path/to/gsd
+CREW_GSTACK_HOME=/path/to/gstack
+CREW_SUPERPOWERS_HOME=/path/to/superpowers/skills
 ```
 
 Then execute:
@@ -116,10 +116,10 @@ Load-bearing expected hook graph:
 
 ```text
 plan:post
-  triple-gstack plan-review gate
+  crew-quality plan-review gate
 
 execute:wave:pre
-  triple-superpowers -> executor contribution
+  crew-discipline -> executor contribution
 
 execute:post
   code-review
@@ -135,7 +135,7 @@ ship:pre
   GSD ship authorization arm
 
 ship:post
-  triple-gstack-post-ship
+  crew-gsd-postship
 ```
 
 If this level fails, inspect:
@@ -163,15 +163,15 @@ The `failure.stage` field is intended to tell you whether the break is:
 At any point in the acceptance run, invoke:
 
 ```text
-/gsd-triple-crown
+/crew-gsd
 ```
 
 Acceptance:
 - it derives the current phase from `.planning`, not chat memory;
-- it shows the 10 Triple Crown checkpoints;
+- it shows the 10 Crew checkpoints;
 - a blocked checkpoint is surfaced before later waiting checkpoints;
 - `next` names the owning command without executing it;
-- `/gsd-triple-crown resume` returns the last durable artifact and restart point.
+- `/crew-gsd resume` returns the last durable artifact and restart point.
 
 Use `/gsd-progress --forensic` when the underlying GSD state itself appears
 inconsistent.
@@ -180,7 +180,7 @@ inconsistent.
 Purpose:
 
 ```text
-Do the AI/runtime semantics still behave as Triple Crown expects?
+Do the AI/runtime semantics still behave as Crew expects?
 ```
 
 Use the fixture kept by L1.
@@ -213,7 +213,7 @@ claude
 ```
 
 Confirm the GSD commands are available and inspect `/hooks` to confirm the
-Triple Crown Bash guard is active.
+Crew Bash guard is active.
 
 ## 3. Validate executor policy
 
@@ -288,7 +288,7 @@ The fixture phase is auth/session-sensitive and should be classified high risk.
 Verify:
 - GSD native security remains active;
 - gstack CSO produces `GSTACK-SECURITY.json` when policy triggers;
-- an open high/critical CSO finding blocks the Triple Crown ship gate;
+- an open high/critical CSO finding blocks the Crew ship gate;
 - GSD native `SECURITY.md` can independently block.
 
 ## 8. Validate hard ship ownership

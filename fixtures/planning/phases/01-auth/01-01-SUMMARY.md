@@ -1,6 +1,6 @@
 # Summary
 
-Implemented a tiny auth fixture for Triple Crown E2E.
+Implemented a tiny auth fixture for Crew E2E.
 
 ## User-visible requirements
 - Login opens Dashboard.

@@ -78,5 +78,5 @@ Recommended triggers:
 Current GSD treats ship:post hooks as additive/best-effort. A failure does not
 revoke the PR that was already created.
 
-Triple Crown therefore records failures in artifacts and reports them rather than
+Crew therefore records failures in artifacts and reports them rather than
 pretending the original ship did not occur.

@@ -1,6 +1,6 @@
 # Mutation Contract v0.3
 
-External review tools may modify code. Triple Crown treats that as a state transition,
+External review tools may modify code. Crew treats that as a state transition,
 not as an incidental side effect.
 
 ## PRE snapshot
@@ -18,7 +18,7 @@ content digests
 workspace digest
 ```
 
-`.planning/**` and `.gsd/**` are excluded so Triple Crown's own bookkeeping does
+`.planning/**` and `.gsd/**` are excluded so Crew's own bookkeeping does
 not make its snapshot self-invalidating.
 
 ## POST snapshot
@@ -67,7 +67,7 @@ contains:
 When changed:
 
 ```text
-1. prior Triple Crown evidence is compared with POST workspace digest;
+1. prior Crew evidence is compared with POST workspace digest;
 2. non-matching current evidence becomes stale;
 3. fresh post-review verification becomes mandatory;
 4. GSD verify is blocked until fresh evidence is green.

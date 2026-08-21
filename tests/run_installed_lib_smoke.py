@@ -8,7 +8,7 @@ import os, subprocess, tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-CLI = ROOT / "bin" / "triple-crown.cjs"
+CLI = ROOT / "bin" / "crew.cjs"
 FAKE = ROOT / "tests" / "fake-gsd.cjs"
 
 
@@ -34,10 +34,10 @@ def env_for(home):
     e = os.environ.copy()
     e["HOME"] = str(home)
     e["USERPROFILE"] = str(home)
-    e["TRIPLE_GSD_BIN"] = str(FAKE)
+    e["CREW_GSD_BIN"] = str(FAKE)
     # main 은 재구성 기간 내내 프리릴리스 VERSION 을 달고 있다(설계 §4.5 계층 2).
     # 이 스모크는 "배포 가능한가"가 아니라 "설치 동작이 온전한가"를 보므로 펜스를 명시적으로 연다.
-    e["TRIPLE_CROWN_ALLOW_UNSUPPORTED_NODE"] = "1"
+    e["CREW_ALLOW_UNSUPPORTED_NODE"] = "1"
     return e
 
 

@@ -15,7 +15,7 @@ test('prerelease VERSION refuses install without --allow-prerelease', () => {
   // fixture stays a self-consistent package — otherwise the (unrelated) manifest
   // version-agreement check rejects it for version drift, not for the prerelease fence
   // this test is actually about.
-  for (const id of ['triple-superpowers', 'triple-gstack', 'triple-crown-guide']) {
+  for (const id of ['crew-discipline', 'crew-quality', 'crew-guide']) {
     const capFile = path.join(pkg, 'capabilities', id, 'capability.json');
     const cap = JSON.parse(fs.readFileSync(capFile, 'utf8'));
     cap.version = '0.7.0-test';
@@ -23,7 +23,7 @@ test('prerelease VERSION refuses install without --allow-prerelease', () => {
   }
   const proj = tempDir('crew-proj-');
   const run = (args) => cp.spawnSync(
-    process.execPath, [path.join(pkg, 'bin', 'triple-crown.cjs'), ...args],
+    process.execPath, [path.join(pkg, 'bin', 'crew.cjs'), ...args],
     { encoding: 'utf8' }
   );
 
@@ -44,7 +44,7 @@ test('repo tree install behavior matches its own VERSION prerelease state', () =
   const proj = tempDir('crew-proj-');
   const r = cp.spawnSync(
     process.execPath,
-    [path.join(ROOT, 'bin', 'triple-crown.cjs'), 'install', '--yes', '--dry-run', '--project', proj],
+    [path.join(ROOT, 'bin', 'crew.cjs'), 'install', '--yes', '--dry-run', '--project', proj],
     { encoding: 'utf8' }
   );
   if (version.includes('-')) {

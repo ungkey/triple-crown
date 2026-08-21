@@ -45,34 +45,34 @@ def validate(name, cap):
             for rel in re.findall(r'\$\{GSD_CAP_DIR\}/([^\"]+)', pred.get("command","")):
                 if ".." in Path(rel).parts or not (CAPS/name/rel).exists(): fail(f"{name}: missing gate target {rel}")
 
-    if name == "triple-gstack":
-        post=[s for s in cap["steps"] if s["point"]=="ship:post" and s["ref"].get("skill")=="triple-gstack-post-ship"]
-        if len(post)!=1: fail("missing unique triple-gstack-post-ship step")
+    if name == "crew-quality":
+        post=[s for s in cap["steps"] if s["point"]=="ship:post" and s["ref"].get("skill")=="crew-gsd-postship"]
+        if len(post)!=1: fail("missing unique crew-gsd-postship step")
         if post[0]["onError"]!="skip": fail("ship:post must be best-effort/onError skip")
         if "UAT.md" not in post[0]["consumes"]: fail("ship:post must consume UAT.md")
         guards=[g for g in cap["gates"] if g["point"]=="ship:pre" and "ship-guard-control.cjs" in g["check"].get("predicate",{}).get("command","")]
         if len(guards)!=1: fail("missing ship authorization arm gate")
-        for key in ("triple_crown.ship.owner","triple_crown.ship.guard_enabled","triple_crown.gstack.canary_mode","triple_crown.gstack.document_release_mode","triple_crown.gstack.retro_mode"):
+        for key in ("crew.ship.owner","crew.ship.guard_enabled","crew.gstack.canary_mode","crew.gstack.document_release_mode","crew.gstack.retro_mode"):
             if key not in cap["config"]: fail(f"missing config {key}")
 
 def main():
-    for name in ("triple-superpowers","triple-gstack","triple-crown-guide"):
+    for name in ("crew-discipline","crew-quality","crew-guide"):
         cap=load(name); validate(name,cap); print(f'PASS: {name}')
 
-    guide = load("triple-crown-guide")
+    guide = load("crew-guide")
     if guide["steps"] or guide["contributions"] or guide["gates"]:
-        fail("triple-crown-guide must remain read-only/no lifecycle hooks")
-    if guide["skills"] != ["triple-crown"]:
-        fail("triple-crown-guide must expose one unified situational skill")
+        fail("crew-guide must remain read-only/no lifecycle hooks")
+    if guide["skills"] != ["crew-gsd"]:
+        fail("crew-guide must expose one unified situational skill")
     for rel in (
-        "capabilities/triple-crown-guide/checks/workflow-guide.cjs",
+        "capabilities/crew-guide/checks/workflow-guide.cjs",
         "docs/WORKFLOW-GUIDE.md",
         "WORKFLOW-QUICK-REFERENCE.md",
     ):
         if not (ROOT/rel).exists():
             fail(f"missing workflow guide file {rel}")
 
-    for rel in ("guards/triple-crown-ship-guard.cjs","scripts/install-claude-ship-guard.cjs","claude-hooks/settings.fragment.json"):
+    for rel in ("guards/crew-ship-guard.cjs","scripts/install-claude-ship-guard.cjs","claude-hooks/settings.fragment.json"):
         if not (ROOT/rel).exists(): fail(f"missing {rel}")
     for rel in (
         "e2e/doctor.cjs",

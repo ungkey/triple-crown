@@ -1,0 +1,333 @@
+{
+  "id": "crew-quality",
+  "role": "feature",
+  "version": "0.7.0-dev",
+  "title": "Crew gstack Quality, Security & Release Bridge",
+  "description": "Adds GSD-owned ship authorization, release/deployment evidence, and safe post-ship adapters for gstack canary, document-release, and retro.",
+  "tier": "full",
+  "requires": [],
+  "engines": {
+    "gsd": ">=1.10.0 <2.0.0"
+  },
+  "runtimeCompat": {
+    "supported": [
+      "*"
+    ],
+    "unsupported": [],
+    "notes": {
+      "*": "Crew validates the concrete Claude Code/gstack/Superpowers host dependencies in its installer/doctor. The GSD capability overlay itself avoids concrete runtime-registry coupling."
+    }
+  },
+  "skills": [
+    "crew-gsd-review",
+    "crew-gsd-qa",
+    "crew-gsd-sec",
+    "crew-gsd-postship",
+    "crew-gsd-release"
+  ],
+  "agents": [],
+  "hooks": [],
+  "config": {
+    "crew.gstack.plan_review_required": {
+      "type": "boolean",
+      "default": true,
+      "description": "Block plan:post until the current plan set has been interactively reviewed with gstack and marked current."
+    },
+    "crew.gstack.code_review_enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Run the Crew gstack code-review bridge at execute:post."
+    },
+    "crew.gstack.review_skill_id": {
+      "type": "string",
+      "default": "review",
+      "description": "Exact gstack review skill id exposed by the host. Change when the installation uses a namespaced id."
+    },
+    "crew.gstack.verify_mutations": {
+      "type": "boolean",
+      "default": true,
+      "description": "Require fresh post-review verification evidence whenever gstack review mutates repository state."
+    },
+    "crew.gstack.qa_enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Run report-only gstack QA after code review and seed its results into GSD UAT."
+    },
+    "crew.gstack.qa_skill_id": {
+      "type": "string",
+      "default": "qa-only",
+      "description": "Exact gstack report-only QA skill id exposed by the host."
+    },
+    "crew.gstack.security_enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable the independent gstack CSO audit integration."
+    },
+    "crew.gstack.security_mode": {
+      "type": "enum",
+      "values": [
+        "off",
+        "risk-based",
+        "always"
+      ],
+      "default": "risk-based",
+      "description": "When the gstack CSO audit runs."
+    },
+    "crew.gstack.security_trigger_at": {
+      "type": "enum",
+      "values": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "default": "medium",
+      "description": "Minimum deterministic phase risk that triggers CSO in risk-based mode."
+    },
+    "crew.gstack.security_audit_depth": {
+      "type": "enum",
+      "values": [
+        "daily",
+        "comprehensive"
+      ],
+      "default": "daily",
+      "description": "Requested gstack CSO audit depth."
+    },
+    "crew.gstack.security_skill_id": {
+      "type": "string",
+      "default": "cso",
+      "description": "Exact gstack CSO skill id exposed by the host."
+    },
+    "crew.gstack.security_block_on": {
+      "type": "enum",
+      "values": [
+        "critical",
+        "high",
+        "medium",
+        "low",
+        "none"
+      ],
+      "default": "high",
+      "description": "Minimum open gstack CSO finding severity that blocks ship."
+    },
+    "crew.ship.owner": {
+      "type": "enum",
+      "values": [
+        "gsd"
+      ],
+      "default": "gsd",
+      "description": "Canonical ship/PR owner for a GSD-controlled Crew project."
+    },
+    "crew.ship.guard_enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Arm the Claude Code ship-effect guard during GSD ship."
+    },
+    "crew.ship.authorization_ttl_seconds": {
+      "type": "number",
+      "default": 300,
+      "description": "Short-lived GSD ship authorization window for protected remote effects."
+    },
+    "crew.gstack.post_ship_enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Run the release-ledger post-ship adapter after GSD creates the PR."
+    },
+    "crew.gstack.document_release_mode": {
+      "type": "enum",
+      "values": [
+        "off",
+        "manual",
+        "open-pr"
+      ],
+      "default": "manual",
+      "description": "Whether gstack document-release may run automatically while the GSD-created PR is open."
+    },
+    "crew.gstack.document_release_skill_id": {
+      "type": "string",
+      "default": "document-release",
+      "description": "Exact gstack document-release skill id exposed by the host."
+    },
+    "crew.gstack.document_release_allow_version_bump": {
+      "type": "boolean",
+      "default": false,
+      "description": "Allow VERSION to be included in the docs-only post-ship push authorization."
+    },
+    "crew.gstack.canary_mode": {
+      "type": "enum",
+      "values": [
+        "off",
+        "quick-if-deployed",
+        "monitor-if-deployed"
+      ],
+      "default": "quick-if-deployed",
+      "description": "Run canary only when release evidence proves a matching deployment."
+    },
+    "crew.gstack.canary_skill_id": {
+      "type": "string",
+      "default": "canary",
+      "description": "Exact gstack canary skill id exposed by the host."
+    },
+    "crew.gstack.canary_duration": {
+      "type": "string",
+      "default": "5m",
+      "description": "Duration passed to gstack canary when monitor-if-deployed mode is used."
+    },
+    "crew.gstack.retro_mode": {
+      "type": "enum",
+      "values": [
+        "off",
+        "manual",
+        "every-ship"
+      ],
+      "default": "manual",
+      "description": "Retro is weekly/sprint-oriented; default is manual rather than every PR."
+    },
+    "crew.gstack.retro_skill_id": {
+      "type": "string",
+      "default": "retro",
+      "description": "Exact gstack retro skill id exposed by the host."
+    },
+    "crew.gstack.retro_window": {
+      "type": "string",
+      "default": "7d",
+      "description": "Window passed to gstack retro when invoked automatically."
+    }
+  },
+  "steps": [
+    {
+      "point": "execute:post",
+      "ref": {
+        "skill": "crew-gsd-review"
+      },
+      "produces": [
+        "GSTACK-CODE-REVIEW.md",
+        "GSTACK-CODE-REVIEW.json",
+        "MUTATION.json",
+        "EVIDENCE.json"
+      ],
+      "consumes": [
+        "SUMMARY.md"
+      ],
+      "when": "crew.gstack.code_review_enabled",
+      "onError": "halt"
+    },
+    {
+      "point": "execute:post",
+      "ref": {
+        "skill": "crew-gsd-qa"
+      },
+      "produces": [
+        "GSTACK-QA.md",
+        "GSTACK-QA.json",
+        "GSTACK-QA-UAT-BRIDGE.json"
+      ],
+      "consumes": [
+        "SUMMARY.md",
+        "GSTACK-CODE-REVIEW.json"
+      ],
+      "when": "crew.gstack.qa_enabled",
+      "onError": "halt"
+    },
+    {
+      "point": "execute:post",
+      "ref": {
+        "skill": "crew-gsd-sec"
+      },
+      "produces": [
+        "GSTACK-SECURITY.md",
+        "GSTACK-SECURITY.json"
+      ],
+      "consumes": [
+        "SUMMARY.md",
+        "GSTACK-QA.json"
+      ],
+      "when": "crew.gstack.security_enabled",
+      "onError": "halt"
+    },
+    {
+      "point": "ship:post",
+      "ref": {
+        "skill": "crew-gsd-postship"
+      },
+      "produces": [
+        "RELEASE.json",
+        "GSTACK-DOCUMENT-RELEASE.json",
+        "GSTACK-CANARY.json",
+        "GSTACK-RETRO.json"
+      ],
+      "consumes": [
+        "UAT.md"
+      ],
+      "when": "crew.gstack.post_ship_enabled",
+      "onError": "skip"
+    }
+  ],
+  "contributions": [],
+  "gates": [
+    {
+      "point": "plan:post",
+      "check": {
+        "predicate": {
+          "kind": "command-exit-zero",
+          "command": "node \"${GSD_CAP_DIR}/checks/plan-review-current.cjs\" \"${PHASE_DIR}\"",
+          "timeout": 10
+        }
+      },
+      "when": "crew.gstack.plan_review_required",
+      "blocking": true,
+      "onError": "halt"
+    },
+    {
+      "point": "verify:pre",
+      "check": {
+        "predicate": {
+          "kind": "command-exit-zero",
+          "command": "node \"${GSD_CAP_DIR}/checks/verify-ready.cjs\" \"${PHASE_DIR}\"",
+          "timeout": 15
+        }
+      },
+      "when": "crew.gstack.code_review_enabled",
+      "blocking": true,
+      "onError": "halt"
+    },
+    {
+      "point": "verify:pre",
+      "check": {
+        "predicate": {
+          "kind": "command-exit-zero",
+          "command": "node \"${GSD_CAP_DIR}/checks/qa-ready.cjs\" \"${PHASE_DIR}\"",
+          "timeout": 15
+        }
+      },
+      "when": "crew.gstack.qa_enabled",
+      "blocking": true,
+      "onError": "halt"
+    },
+    {
+      "point": "ship:pre",
+      "check": {
+        "predicate": {
+          "kind": "command-exit-zero",
+          "command": "node \"${GSD_CAP_DIR}/checks/security-ready.cjs\" \"${PHASE_DIR}\"",
+          "timeout": 15
+        }
+      },
+      "when": "crew.gstack.security_enabled",
+      "blocking": true,
+      "onError": "halt"
+    },
+    {
+      "point": "ship:pre",
+      "check": {
+        "predicate": {
+          "kind": "command-exit-zero",
+          "command": "node \"${GSD_CAP_DIR}/checks/ship-guard-control.cjs\" arm-gsd \"${PHASE_DIR}\"",
+          "timeout": 10
+        }
+      },
+      "when": "crew.ship.guard_enabled",
+      "blocking": true,
+      "onError": "halt"
+    }
+  ]
+}

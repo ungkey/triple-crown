@@ -1,11 +1,11 @@
 {
-  "name": "triple-crown-workflow-installer",
+  "name": "crew-harness",
   "version": "0.7.0-dev",
-  "description": "Installer for the Triple Crown GSD + gstack + Superpowers workflow integration.",
+  "description": "Installer for the Crew GSD + gstack + Superpowers workflow integration.",
   "bin": {
-    "triple-crown-workflow-installer": "bin/triple-crown.cjs",
-    "triple-crown": "bin/triple-crown.cjs",
-    "triple-crown-install": "bin/triple-crown.cjs"
+    "crew-harness": "bin/crew.cjs",
+    "crew": "bin/crew.cjs",
+    "crew-install": "bin/crew.cjs"
   },
   "files": [
     "bin",

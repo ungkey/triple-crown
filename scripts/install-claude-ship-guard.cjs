@@ -13,7 +13,7 @@ function ensureArray(obj, key) {
   return obj[key];
 }
 function isGuardHook(h) {
-  return !!h && h.type === 'command' && String(h.command || '').includes('triple-crown-ship-guard.cjs');
+  return !!h && h.type === 'command' && String(h.command || '').includes('crew-ship-guard.cjs');
 }
 function sameHookGroup(group, command) {
   if (!group || group.matcher !== 'Bash' || !Array.isArray(group.hooks)) return false;
@@ -33,14 +33,14 @@ function migrateLegacyRegistrations(groups, command) {
 
 try {
   const projectRoot = path.resolve(process.argv[2] || process.cwd());
-  const source = path.resolve(__dirname, '..', 'guards', 'triple-crown-ship-guard.cjs');
+  const source = path.resolve(__dirname, '..', 'guards', 'crew-ship-guard.cjs');
   if (!fs.existsSync(source)) throw new Error(`guard source missing: ${source}`);
 
   const claudeDir = path.join(projectRoot, '.claude');
   const hooksDir = path.join(claudeDir, 'hooks');
   fs.mkdirSync(hooksDir, { recursive: true });
 
-  const target = path.join(hooksDir, 'triple-crown-ship-guard.cjs');
+  const target = path.join(hooksDir, 'crew-ship-guard.cjs');
   fs.copyFileSync(source, target);
   // npm/npx trees do not preserve an executable bit that the git checkout never had.
   fs.chmodSync(target, 0o755);
@@ -51,7 +51,7 @@ try {
   const pre = ensureArray(settings.hooks, 'PreToolUse');
   // Invoke through an explicit interpreter: this is the only form that works on
   // Windows and on a tree where the executable bit was stripped.
-  const command = 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/triple-crown-ship-guard.cjs"';
+  const command = 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/crew-ship-guard.cjs"';
 
   migrateLegacyRegistrations(pre, command);
 
@@ -68,7 +68,7 @@ try {
   }
 
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
-  console.log(`Installed Triple Crown ship guard: ${target}`);
+  console.log(`Installed Crew ship guard: ${target}`);
   console.log(`Updated Claude Code project settings: ${settingsPath}`);
 } catch (err) {
   console.error(`install-claude-ship-guard: ${err.message}`);

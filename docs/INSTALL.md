@@ -3,7 +3,7 @@
 The preferred path is now the one-command installer. See `docs/INSTALLER.md`.
 
 ```bash
-npx --yes triple-crown-workflow-installer@latest install --yes
+npx --yes crew-harness@latest install --yes
 ```
 
 The manual capability commands below are retained for troubleshooting, offline
@@ -16,7 +16,7 @@ development, and installer debugging.
 v0.6 installation has two parts:
 
 ```text
-1. Triple Crown runtime capabilities / ship guard
+1. Crew runtime capabilities / ship guard
 2. E2E compatibility validation
 ```
 
@@ -77,14 +77,14 @@ In Claude Code, current official marketplace install:
 /plugin install superpowers@claude-plugins-official
 ```
 
-## Install Triple Crown project capabilities
+## Install Crew project capabilities
 
 From the v0.6.1 bundle or your copied project integration directory:
 
 ```bash
-gsd capability install ./capabilities/triple-superpowers --scope project --yes
-gsd capability install ./capabilities/triple-gstack --scope project --yes
-gsd capability install ./capabilities/triple-crown-guide --scope project --yes
+gsd capability install ./capabilities/crew-discipline --scope project --yes
+gsd capability install ./capabilities/crew-quality --scope project --yes
+gsd capability install ./capabilities/crew-guide --scope project --yes
 ```
 
 `--yes` is explicit third-party capability consent. Review the bundle before
@@ -93,18 +93,18 @@ granting it. The v0.6 E2E runner uses `--yes` only inside its disposable fixture
 
 ## Verify Workflow Guide
 
-The installer copies the six Triple Crown skills into
-`<project>/.claude/skills/gsd-triple-*/`. A GSD `capability install` alone never
+The installer copies the six Crew skills into
+`<project>/.claude/skills/crew-*/`. A GSD `capability install` alone never
 reaches a skills root, so this step is what makes the commands visible.
 
 Start a new Claude Code session in the project (or reload the window), then
 invoke:
 
 ```text
-/gsd-triple-crown
+/crew-gsd
 ```
 
-If the command is still unknown, run `triple-crown doctor` and check
+If the command is still unknown, run `crew doctor` and check
 `skills-installed`. A `FAIL` there names the missing directories; a
 `skills-no-global-shadow` warning means an older global copy in
 `~/.claude/skills/` may be taking precedence and should be removed.
@@ -112,10 +112,10 @@ If the command is still unknown, run `triple-crown doctor` and check
 Useful orientation commands:
 
 ```text
-/gsd-triple-crown next
-/gsd-triple-crown resume
-/gsd-triple-crown help recovery
-/gsd-triple-crown doctor
+/crew-gsd next
+/crew-gsd resume
+/crew-gsd help recovery
+/crew-gsd doctor
 ```
 
 The guide is read-only. It never advances the workflow automatically.
@@ -141,18 +141,18 @@ node e2e/doctor.cjs
 If tools are installed outside standard paths:
 
 ```bash
-TRIPLE_GSD_BIN=/path/to/gsd \
-TRIPLE_GSTACK_HOME=/path/to/gstack \
-TRIPLE_SUPERPOWERS_HOME=/path/to/superpowers/skills \
+CREW_GSD_BIN=/path/to/gsd \
+CREW_GSTACK_HOME=/path/to/gstack \
+CREW_SUPERPOWERS_HOME=/path/to/superpowers/skills \
 node e2e/doctor.cjs
 ```
 
 PowerShell equivalent:
 
 ```powershell
-$env:TRIPLE_GSD_BIN = "C:\path\to\gsd.exe"
-$env:TRIPLE_GSTACK_HOME = "C:\Users\me\.claude\skills\gstack"
-$env:TRIPLE_SUPERPOWERS_HOME = "C:\path\to\superpowers\skills"
+$env:CREW_GSD_BIN = "C:\path\to\gsd.exe"
+$env:CREW_GSTACK_HOME = "C:\Users\me\.claude\skills\gstack"
+$env:CREW_SUPERPOWERS_HOME = "C:\path\to\superpowers\skills"
 node .\e2e\doctor.cjs
 ```
 

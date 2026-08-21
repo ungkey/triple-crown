@@ -1,27 +1,27 @@
-# Triple Crown — Don't Get Lost
+# Crew — Don't Get Lost
 
 작업 중 방향을 잃으면 아래 네 개만 기억하면 됩니다.
 
 ```text
-/gsd-triple-crown
+/crew-gsd
 ```
 
-현재 Triple Crown 전체 checkpoint 상태.
+현재 Crew 전체 checkpoint 상태.
 
 ```text
-/gsd-triple-crown next
+/crew-gsd next
 ```
 
 다음 실행 명령만 표시.
 
 ```text
-/gsd-triple-crown resume
+/crew-gsd resume
 ```
 
 오랜만에 돌아왔을 때 마지막 durable checkpoint와 재개 지점.
 
 ```text
-/gsd-triple-crown help recovery
+/crew-gsd help recovery
 ```
 
 왜 막혔는지 / 어느 owner가 해결해야 하는지.

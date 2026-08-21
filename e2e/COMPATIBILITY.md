@@ -1,10 +1,10 @@
-# Triple Crown v0.6 Compatibility Baseline
+# Crew v0.6 Compatibility Baseline
 
 Captured: **2026-08-19**
 
 The harness intentionally separates "known upstream version" from "supported range".
 
-| Upstream | Observed baseline | Triple Crown v0.6 contract |
+| Upstream | Observed baseline | Crew v0.6 contract |
 |---|---:|---|
 | GSD Core | 1.10.0 (`next`) | `>=1.10.0 <2.0.0` |
 | gstack | 1.67.2.0 | required skill set + behavioral boundaries |
@@ -68,7 +68,7 @@ systematic-debugging
 verification-before-completion
 ```
 
-Triple Crown deliberately does not require the full Superpowers lifecycle during
+Crew deliberately does not require the full Superpowers lifecycle during
 GSD execution. The compatibility contract is:
 
 ```text

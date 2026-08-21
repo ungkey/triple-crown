@@ -1,6 +1,6 @@
 # QA Contract v0.4
 
-gstack `/qa-only` is the report-only QA workflow. Triple Crown treats any project
+gstack `/qa-only` is the report-only QA workflow. Crew treats any project
 worktree mutation during qa-only as a contract violation.
 
 ## Canonical QA artifact
@@ -41,7 +41,7 @@ When no UAT exists yet, uncovered user-visible SUMMARY deliverables are inserted
 as `result: [pending]`; they are never silently marked passed.
 
 When a native UAT already exists, the bridge preserves native results and only
-replaces Triple Crown managed QA blocks on rerun.
+replaces Crew managed QA blocks on rerun.
 
 ## Verify gate
 
