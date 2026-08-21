@@ -37,9 +37,12 @@ const HASH_FILE = 'LIB-HASH.json';
 // 개명 전 capability id(매핑은 docs/RENAME-MAP.md 참조)를 crew-quality 로 1:1
 // 개명한다. 그 기계적 치환은 이 키,
 // capabilities/<id>/checks/lib/ 경로, 그리고 lib-hash.test.cjs 의 git restore 정규식을
-// **한 커밋에서 같이** 옮겨야 한다. M1b 는 그 뒤에 crew-quality 를 9개로 쪼개며 표를
-// 늘린다. 표에서 빠진 참조는 e2e/contract/lib-hash.test.cjs 의 LIB_MAP 완전성
-// 테스트가 잡는다.
+// **한 커밋에서 같이** 옮겨야 한다. M1b 는 그 뒤에 crew-quality 에서 릴리스 표면만
+// crew-ship 으로 떼어내 capability 를 4개로 만들고 이 표에 crew-ship 한 줄을 더했다.
+// 설계 §5 의 "9개로 분해"는 GSD 1.11.0 에서 불가능하다 — capability-source.cts:836 이
+// 검증 맵에 설치 중인 capability 하나만 넣으므로 requires 가 비어 있지 않으면 대상이
+// 이미 active 여도 거부한다(실측). 그래서 capability 는 4개까지만 늘린다.
+// 표에서 빠진 참조는 e2e/contract/lib-hash.test.cjs 의 LIB_MAP 완전성 테스트가 잡는다.
 const LIB_MAP = {
   'crew-quality': ['repo-state-lib.cjs', 'evidence-store.cjs', 'resolve-phase-dir.cjs'],
   'crew-ship': ['repo-state-lib.cjs', 'resolve-phase-dir.cjs'],

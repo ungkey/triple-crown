@@ -2,8 +2,8 @@
   "id": "crew-quality",
   "role": "feature",
   "version": "0.7.0-dev",
-  "title": "Crew gstack Quality, Security & Release Bridge",
-  "description": "Adds GSD-owned ship authorization, release/deployment evidence, and safe post-ship adapters for gstack canary, document-release, and retro.",
+  "title": "Crew gstack Review, QA & Security Bridge",
+  "description": "Adds the GSD-owned plan-review gate and the gstack code-review, report-only QA, and independent CSO security sessions at execute:post, plus the verify:pre and ship:pre readiness gates that refuse to advance without that evidence.",
   "tier": "full",
   "requires": [],
   "engines": {

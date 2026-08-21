@@ -13,6 +13,10 @@ POINTS = {
 
 def fail(msg): raise AssertionError(msg)
 
+# validate() 는 디렉터리 순회로 불린다. crew-ship 이 개명/삭제되면 아래 ship 표면 블록이
+# 조용한 no-op 이 되고 스모크는 초록으로 끝난다. 실제로 돌았는지를 세서 못 돌면 실패한다.
+SHIP_SURFACE_CHECKED = 0
+
 def load(name):
     p = CAPS/name/"capability.json"
     cap = json.loads(p.read_text(encoding="utf-8"))
@@ -46,6 +50,8 @@ def validate(name, cap):
                 if ".." in Path(rel).parts or not (CAPS/name/rel).exists(): fail(f"{name}: missing gate target {rel}")
 
     if name == "crew-ship":
+        global SHIP_SURFACE_CHECKED
+        SHIP_SURFACE_CHECKED += 1
         post=[s for s in cap["steps"] if s["point"]=="ship:post" and s["ref"].get("skill")=="crew-gsd-postship"]
         if len(post)!=1: fail("missing unique crew-gsd-postship step")
         if post[0]["onError"]!="skip": fail("ship:post must be best-effort/onError skip")
@@ -58,6 +64,9 @@ def validate(name, cap):
 def main():
     for name in sorted(p.name for p in CAPS.iterdir() if p.is_dir()):
         cap=load(name); validate(name,cap); print(f'PASS: {name}')
+    if not SHIP_SURFACE_CHECKED:
+        fail("no capability matched the ship-surface block — "
+             "the ship ownership assertions stopped running")
 
     guide = load("crew-guide")
     if guide["steps"] or guide["contributions"] or guide["gates"]:
