@@ -11,6 +11,17 @@ const { ROOT, copyRepo } = require('./helpers/repo.cjs');
 test('prerelease VERSION refuses install without --allow-prerelease', () => {
   const pkg = copyRepo('crew-prerelease-');
   fs.writeFileSync(path.join(pkg, 'VERSION'), '0.7.0-test\n');
+  // Task 5 moved the capability-manifest preflight ahead of the --dry-run return, so it
+  // now runs here too. Keep the capability manifests in lockstep with VERSION so this
+  // fixture stays a self-consistent package — otherwise the (unrelated) manifest
+  // version-agreement check rejects it for version drift, not for the prerelease fence
+  // this test is actually about.
+  for (const id of ['triple-superpowers', 'triple-gstack', 'triple-crown-guide']) {
+    const capFile = path.join(pkg, 'capabilities', id, 'capability.json');
+    const cap = JSON.parse(fs.readFileSync(capFile, 'utf8'));
+    cap.version = '0.7.0-test';
+    fs.writeFileSync(capFile, JSON.stringify(cap, null, 2) + '\n');
+  }
   const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-proj-'));
   const run = (args) => cp.spawnSync(
     process.execPath, [path.join(pkg, 'bin', 'triple-crown.cjs'), ...args],

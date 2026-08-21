@@ -6,6 +6,7 @@ const path = require('path');
 const os = require('os');
 const cp = require('child_process');
 const readline = require('readline');
+const crypto = require('crypto');
 
 const PACKAGE_ROOT = path.resolve(__dirname, '..');
 const VERSION = fs.readFileSync(path.join(PACKAGE_ROOT, 'VERSION'), 'utf8').trim();
@@ -284,6 +285,61 @@ function validateBundledManifests() {
       errors.push(`${id}: runtimeCompat.notes must not reference concrete runtime ids`);
     }
   }
+  // 배포본에는 canonical lib/ 이 없다(package.json files 참조). 사본을 신뢰할 근거는
+  // 함께 실린 LIB-HASH.json 하나뿐이므로 그 기록과만 대조한다.
+  //
+  // 이 대조가 실제로 주는 성질은 두 가지다: (1) 사고성 drift 검출, (2) 사본만 고치고
+  // 기록은 안 고친 한쪽 편집 검출. 기록도 같은 tarball 안에 있으므로 **둘 다 고친 경우는
+  // 잡지 못한다** — canonical 을 같이 싣는 경우와 동일한 한계다. lib/ 을 안 싣는 이유는
+  // 변조 저항이 아니라 단일 소스 규율이다.
+  //
+  // 검사 대상은 CAPABILITIES 가 아니라 capabilities/ 디렉터리 그 자체다. 설치 목록과
+  // 검사 목록이 갈라지면 M1b 가 capability 를 늘릴 때 한쪽에만 넣어 그 사본이 검사 없이
+  // 배포되는 사일런트 구멍이 생긴다. "배포본에 실제로 있는 것"을 검사 대상의 정의로 삼는다.
+  const HEX64=/^[0-9a-f]{64}$/;
+  const capsRoot=path.join(PACKAGE_ROOT,'capabilities');
+  for(const id of (exists(capsRoot)?fs.readdirSync(capsRoot):[])) {
+    const dir=path.join(capsRoot,id,'checks','lib');
+    if(!exists(dir)) continue;                    // 이 capability 는 공유 lib 을 쓰지 않는다
+    const record=readJson(path.join(dir,'LIB-HASH.json'));
+    if(!record || record.schema!==1 || record.generatedFrom!=='lib/'
+       || !record.files || typeof record.files!=='object' || Array.isArray(record.files)) {
+      errors.push(`${id}: checks/lib exists without a readable schema-1 LIB-HASH.json`);
+      continue;
+    }
+    const recorded=Object.keys(record.files);
+    // 빈 기록은 정의상 모순이다. checks/lib/ 이 있다는 것 자체가 "이 capability 는 공유
+    // lib 을 쓴다"는 선언인데, 기록이 비면 아래 두 루프가 모두 공회전해 **사본을 전부
+    // 지운 패키지가 그대로 통과한다.** 그러면 게이트가 사용자 세션 한가운데서
+    // Cannot find module 로 죽는다 — 설치 시점에 잡을 수 있었던 것을 가장 나쁜 순간으로 미룬다.
+    if(!recorded.length) {
+      errors.push(`${id}: LIB-HASH.json records no files — a checks/lib with nothing recorded cannot be verified`);
+      continue;
+    }
+    for(const f of recorded) {
+      // 기록 파일은 신뢰 경계다. 키를 그대로 join 하면 '../../bin/x.cjs' 같은 값이 패키지
+      // 밖을 가리킬 수 있다. 단순 파일명만 허용한다.
+      if(!f || f!==path.basename(f) || f==='.' || f==='..') {
+        errors.push(`${id}: LIB-HASH.json key ${JSON.stringify(f)} is not a plain file name`);
+        continue;
+      }
+      if(!HEX64.test(String(record.files[f]))) {
+        errors.push(`${id}: checks/lib/${f} has a malformed sha256 in LIB-HASH.json`);
+        continue;
+      }
+      const p=path.join(dir,f);
+      if(!exists(p)) { errors.push(`${id}: checks/lib/${f} is recorded but missing`); continue; }
+      const got=crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+      if(got!==record.files[f]) errors.push(`${id}: checks/lib/${f} sha256 mismatch (tampered or stale build)`);
+    }
+    // 확장자로 거르지 않는다 — .js/.mjs/.json 밀항자도 require 로 실행된다.
+    // 기록 파일 자신만 예외다.
+    for(const f of fs.readdirSync(dir)) {
+      if(f!=='LIB-HASH.json' && !recorded.includes(f)) {
+        errors.push(`${id}: checks/lib/${f} is not recorded in LIB-HASH.json`);
+      }
+    }
+  }
   if(errors.length) {
     fail(`Bundled capability preflight failed:\n${errors.map(x=>`  - ${x}`).join('\n')}`);
   }
@@ -520,6 +576,12 @@ async function install(root,opts) {
   if(sameRealPath(root, os.homedir())) {
     fail(`Refusing to install with the home directory as project root ($HOME = ${os.homedir()}). A $HOME-rooted install collapses project scope into global scope. Run from inside a project, or pass --project <project path>.`,4);
   }
+  // 패키지 자체의 결함이므로 대상 환경(GSD·gstack·Node 24)과 무관하다. dry-run 반환보다
+  // 뒤에 두면 --dry-run 이 변조된 패키지를 통과시킨다 — 검사는 쓰기 전에, 그리고
+  // 동의를 구하기 전에 끝나야 한다. 위 두 펜스보다는 뒤다: "설치하면 안 되는 빌드/경로"가
+  // "패키지가 변조됐다"보다 먼저 나와야 첫 오류가 실제 원인을 가리킨다.
+  validateBundledManifests();
+  log('Capability manifest preflight: PASS');
   const actions=[
     `vendor Triple Crown v${VERSION} runtime files to ${path.join(root,'.triple-crown')}`,
     'install/refresh 3 project-scoped GSD capabilities with explicit consent',
@@ -564,9 +626,6 @@ async function install(root,opts) {
   if(!superpowersBefore && opts.strict) {
     fail('Strict install requires Superpowers. In Claude Code run: /plugin install superpowers@claude-plugins-official');
   }
-
-  validateBundledManifests();
-  log('Capability manifest preflight: PASS');
 
   const tx=prepareStableSource(root);
   try {
