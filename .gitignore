@@ -28,6 +28,12 @@ yarn-error.log*
 .claude/.gsd-*
 
 # ── Test / scratch output ─────────────────────────────────────────────────────
+# `e2e/run-live.cjs` 가 매 실행마다 새로 쓴다 — 타임스탬프와 실행 머신의 절대 cwd 가
+# 박히는 실행 산출물이라 추적 대상이 아니다. 추적하던 동안에는 `npm test` 가 이 파일을
+# 갈아쓰고 곧바로 prepublishOnly 의 클린 트리 검사가 그 변경을 거부해서, "테스트를 돌린
+# 뒤 배포한다"는 평범한 릴리스 순서 자체가 막혀 있었다. 실패 조사 시 볼 파일이라
+# 경로는 그대로 두고 추적만 뗀다(e2e/ACCEPTANCE-RUNBOOK.md 참조).
+e2e/E2E-RESULT.json
 tc-installer-*/
 tmp/
 *.tmp
