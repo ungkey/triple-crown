@@ -8,7 +8,7 @@ umask 077
 #   bash install.sh --yes
 #
 # Remote, from the target project:
-#   curl -fsSL https://raw.githubusercontent.com/ungkey/triple-crown/main/install.sh | bash -s -- --yes
+#   curl -fsSL https://raw.githubusercontent.com/ungkey/triple-crown/v0.6.5/install.sh | bash -s -- --yes
 #
 # Remote resolution order:
 #   1. adjacent package checkout
@@ -31,7 +31,7 @@ if ! command -v npx >/dev/null 2>&1; then
   exit 1
 fi
 
-REF="${TRIPLE_CROWN_REF:-main}"
+REF="${TRIPLE_CROWN_REF:-v0.6.5}"
 
 # An explicitly configured npm package wins; otherwise GitHub is the distribution
 # channel, so the default path needs no environment variables at all.

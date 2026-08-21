@@ -1,7 +1,7 @@
 {
   "id": "triple-crown-guide",
   "role": "feature",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "title": "Triple Crown Workflow Guide",
   "description": "Read-only situational dashboard and help router for Triple Crown. Shows current phase, quality/release checkpoints, blockers, and the next GSD-owned action without becoming another orchestrator.",
   "tier": "standard",

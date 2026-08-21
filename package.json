@@ -1,6 +1,6 @@
 {
   "name": "triple-crown-workflow-installer",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "description": "Installer for the Triple Crown GSD + gstack + Superpowers workflow integration.",
   "bin": {
     "triple-crown-workflow-installer": "bin/triple-crown.cjs",
@@ -22,7 +22,7 @@
     "install.ps1"
   ],
   "engines": {
-    "node": ">=18.0.0",
+    "node": ">=24.0.0",
     "npm": ">=9.0.0"
   },
   "keywords": [

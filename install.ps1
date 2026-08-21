@@ -19,7 +19,7 @@ if (-not (Get-Command npx -ErrorAction SilentlyContinue)) {
   throw "Triple Crown: npx is required for remote installation."
 }
 
-$ref = if ($env:TRIPLE_CROWN_REF) { $env:TRIPLE_CROWN_REF } else { "main" }
+$ref = if ($env:TRIPLE_CROWN_REF) { $env:TRIPLE_CROWN_REF } else { "v0.6.5" }
 
 # An explicitly configured npm package wins; otherwise GitHub is the distribution
 # channel, so the default path needs no environment variables at all.

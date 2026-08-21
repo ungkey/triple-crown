@@ -1,4 +1,4 @@
-# Installation note — v0.6.4
+# Installation note — v0.6.5
 
 The preferred path is now the one-command installer. See `docs/INSTALLER.md`.
 

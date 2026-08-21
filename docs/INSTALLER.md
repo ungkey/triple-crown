@@ -1,4 +1,4 @@
-# Triple Crown v0.6.4 Installer
+# Triple Crown v0.6.5 Installer
 
 v0.6.4 adds a single installer entry point so a user no longer has to install
 three GSD capabilities and the Claude hook manually.
@@ -13,7 +13,7 @@ orchestrator.
 After downloading:
 
 ```text
-triple-crown-workflow-installer-0.6.4.tgz
+triple-crown-workflow-installer-0.6.5.tgz
 ```
 
 run from the target project:
@@ -21,13 +21,13 @@ run from the target project:
 ### macOS / Linux / Git Bash
 
 ```bash
-npx --yes --package /path/to/triple-crown-workflow-installer-0.6.4.tgz triple-crown install --yes
+npx --yes --package /path/to/triple-crown-workflow-installer-0.6.5.tgz triple-crown install --yes
 ```
 
 ### Windows PowerShell
 
 ```powershell
-npx --yes --package C:\path\to\triple-crown-workflow-installer-0.6.4.tgz triple-crown install --yes
+npx --yes --package C:\path\to\triple-crown-workflow-installer-0.6.5.tgz triple-crown install --yes
 ```
 
 The default install attempts to bootstrap missing GSD and gstack.
@@ -35,7 +35,7 @@ The default install attempts to bootstrap missing GSD and gstack.
 If you already installed dependencies and do not want bootstrap behavior:
 
 ```bash
-npx --yes --package ./triple-crown-workflow-installer-0.6.4.tgz \
+npx --yes --package ./triple-crown-workflow-installer-0.6.5.tgz \
   triple-crown install --yes --no-bootstrap
 ```
 
@@ -90,27 +90,27 @@ The canonical repository is <https://github.com/ungkey/triple-crown>. The shorte
 remote form needs no bootstrap script at all — run it from the target project:
 
 ```bash
-npx --yes github:ungkey/triple-crown install --yes
+npx --yes github:ungkey/triple-crown#v0.6.5 install --yes
 ```
 
 `install.sh` can also be piped from raw GitHub:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ungkey/triple-crown/main/install.sh | bash -s -- --yes
+curl -fsSL https://raw.githubusercontent.com/ungkey/triple-crown/v0.6.5/install.sh | bash -s -- --yes
 ```
 
 `ungkey/triple-crown` is the built-in default; `TRIPLE_CROWN_REPO` only needs to
 be set to install from a fork. `TRIPLE_CROWN_REF` pins a tag or branch:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ungkey/triple-crown/v0.6.4/install.sh \
-  | TRIPLE_CROWN_REF=v0.6.4 bash -s -- --yes
+curl -fsSL https://raw.githubusercontent.com/ungkey/triple-crown/v0.6.5/install.sh \
+  | TRIPLE_CROWN_REF=v0.6.5 bash -s -- --yes
 ```
 
 Windows PowerShell uses the same environment variables:
 
 ```powershell
-irm https://raw.githubusercontent.com/ungkey/triple-crown/main/install.ps1 -OutFile install.ps1
+irm https://raw.githubusercontent.com/ungkey/triple-crown/v0.6.5/install.ps1 -OutFile install.ps1
 .\install.ps1 --yes
 ```
 
@@ -377,7 +377,7 @@ node scripts/configure-distribution.cjs \
 The generated npm tarball can be tested before publish:
 
 ```bash
-npx --yes --package ./triple-crown-workflow-installer-0.6.4.tgz triple-crown install --yes
+npx --yes --package ./triple-crown-workflow-installer-0.6.5.tgz triple-crown install --yes
 ```
 
 ---

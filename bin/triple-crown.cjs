@@ -638,7 +638,7 @@ Install options:
   --allow-prerelease   Install even when VERSION is a prerelease build
 
 Immediate local package usage:
-  npx --yes --package ./triple-crown-workflow-installer-0.6.3.tgz triple-crown install --yes
+  npx --yes --package ./triple-crown-workflow-installer-0.6.5.tgz triple-crown install --yes
 
 After npm publish:
   npx --yes triple-crown-workflow-installer@latest install --yes

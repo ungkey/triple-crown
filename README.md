@@ -1,4 +1,4 @@
-# Triple Crown v0.6.4 — One-command Installer + Workflow Guide
+# Triple Crown v0.6.5 — One-command Installer + Workflow Guide
 
 ## Install
 
@@ -26,26 +26,20 @@ Run this **from the project you want Triple Crown to manage** (the installer
 targets the current git root):
 
 ```bash
-npx --yes github:ungkey/triple-crown install --yes
-```
-
-Pin a released tag instead of `main`:
-
-```bash
-npx --yes github:ungkey/triple-crown#v0.6.4 install --yes
+npx --yes github:ungkey/triple-crown#v0.6.5 install --yes
 ```
 
 Target a different directory without changing shell:
 
 ```bash
-npx --yes github:ungkey/triple-crown install --yes --project /path/to/your/project
+npx --yes github:ungkey/triple-crown#v0.6.5 install --yes --project /path/to/your/project
 ```
 
 If your npx version cannot infer the binary from the repository name, name the
 package and the binary explicitly:
 
 ```bash
-npx --yes --package github:ungkey/triple-crown triple-crown install --yes
+npx --yes --package github:ungkey/triple-crown#v0.6.5 triple-crown install --yes
 ```
 
 ### Install from a clone
@@ -64,25 +58,25 @@ this form.
 macOS / Linux — run from the target project:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ungkey/triple-crown/main/install.sh | bash -s -- --yes
+curl -fsSL https://raw.githubusercontent.com/ungkey/triple-crown/v0.6.5/install.sh | bash -s -- --yes
 ```
 
 Windows PowerShell — run from the target project:
 
 ```powershell
-irm https://raw.githubusercontent.com/ungkey/triple-crown/main/install.ps1 -OutFile install.ps1
+irm https://raw.githubusercontent.com/ungkey/triple-crown/v0.6.5/install.ps1 -OutFile install.ps1
 .\install.ps1 --yes
 ```
 
 Both default to `ungkey/triple-crown` and honour `TRIPLE_CROWN_REF` to select a
-branch or tag (default `main`), `TRIPLE_CROWN_REPO` to point at a fork, and
+branch or tag (default: the shipped release tag), `TRIPLE_CROWN_REPO` to point at a fork, and
 `TRIPLE_CROWN_NPM_PACKAGE` to use an npm registry package instead.
 
 ### Install from a packed tarball
 
 ```bash
-npm pack                     # in a clone -> triple-crown-workflow-installer-0.6.4.tgz
-npx --yes --package ./triple-crown-workflow-installer-0.6.4.tgz triple-crown install --yes
+npm pack                     # in a clone -> triple-crown-workflow-installer-0.6.5.tgz
+npx --yes --package ./triple-crown-workflow-installer-0.6.5.tgz triple-crown install --yes
 ```
 
 The npm registry package is not published; GitHub is the distribution channel.
@@ -109,7 +103,7 @@ install alone never reaches a skills root. See `docs/V0.6.4-HOTFIX.md`.
 ### Verify
 
 ```bash
-npx --yes github:ungkey/triple-crown doctor
+npx --yes github:ungkey/triple-crown#v0.6.5 doctor
 ```
 
 `skills-installed` must be `PASS`. Then start a new Claude Code session in the
@@ -124,8 +118,8 @@ It shows the current workflow position and the next action.
 ### Update / uninstall
 
 ```bash
-npx --yes github:ungkey/triple-crown install --yes      # re-run to update in place
-npx --yes github:ungkey/triple-crown uninstall --yes
+npx --yes github:ungkey/triple-crown#v0.6.5 install --yes      # re-run to update in place
+npx --yes github:ungkey/triple-crown#v0.6.5 uninstall --yes
 ```
 
 Uninstall removes only Triple Crown's own capability registrations, `.triple-crown/`,
