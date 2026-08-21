@@ -71,7 +71,10 @@ def main():
         expected={"crew-gsd","crew-gsd-review","crew-gsd-qa",
                   "crew-gsd-sec","crew-gsd-postship","crew-gsd-release"}
         present={d.name for d in skills.iterdir() if d.is_dir()}
-        assert expected<=present,f"missing skills: {sorted(expected-present)}"
+        # 부분집합이 아니라 **완전 일치**다. SKILL_PREFIX 가 되살아나거나 stem 이
+        # 하나 늘면 설치된 집합이 커지는데 부분집합 검사는 그걸 통과시킨다 — 그러면
+        # Claude Code 가 frontmatter 와 어긋난 디렉터리를 못 읽어 스킬이 사라진다.
+        assert expected==present,f"missing: {sorted(expected-present)} unexpected: {sorted(present-expected)}"
         for name in sorted(expected):
             body=(skills/name/"SKILL.md").read_text(encoding="utf-8")
             assert f"name: {name}\n" in body,f"{name}: frontmatter name must match directory name"

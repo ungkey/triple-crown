@@ -19,6 +19,7 @@ const ALLOW = [
   'scripts/legacy-backup.cjs',
   'e2e/contract/legacy-backup.test.cjs',
   'e2e/contract/helpers/fake-home.cjs',
+  'e2e/contract/legacy-transition.test.cjs',
   'e2e/compatibility-baseline.json',
   'e2e/contract/brand-names.test.cjs',
   'docs/RENAME-MAP.md',
