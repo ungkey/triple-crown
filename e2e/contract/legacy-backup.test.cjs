@@ -500,3 +500,59 @@ test('restore refuses a malformed CLAUDE.md marker state (exit 2, no write, rest
   assert.ok(fs.existsSync(path.join(home, '.triple-crown/VERSION')),
     'restoreOrder targets must still be restored even though CLAUDE.md was refused');
 });
+
+test('settings restore: predicate-based reinsert preserves user hooks', () => {
+  const home = mkFakeHome();
+  const dest = path.join(home, 'backup');
+  assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
+
+  // 제거 흉내(그룹 삭제) + 사용자가 자기 훅 추가
+  const sp = path.join(home, '.claude/settings.json');
+  const settings = JSON.parse(fs.readFileSync(sp, 'utf8'));
+  settings.hooks.PreToolUse = [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'my-user-hook.sh' }] }];
+  fs.writeFileSync(sp, JSON.stringify(settings, null, 2) + '\n');
+
+  const r = runBackupTool(['restore', '--from', dest], { HOME: home });
+  assert.strictEqual(r.status, 0, r.stderr);
+
+  const after = JSON.parse(fs.readFileSync(sp, 'utf8'));
+  assert.strictEqual(after.userSetting, true, 'unrelated keys preserved');
+  assert.strictEqual(after.hooks.PreToolUse.length, 2);
+  assert.strictEqual(after.hooks.PreToolUse[0].hooks[0].command, 'my-user-hook.sh',
+    'user hook untouched, index not referenced');
+  assert.match(after.hooks.PreToolUse[1].hooks[0].command, /triple-crown-ship-guard\.cjs/);
+});
+
+test('settings restore: no duplicate when group already present', () => {
+  const home = mkFakeHome();
+  const dest = path.join(home, 'backup');
+  assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
+
+  // sha를 어긋나게 하되 그룹은 그대로 둠
+  const sp = path.join(home, '.claude/settings.json');
+  const settings = JSON.parse(fs.readFileSync(sp, 'utf8'));
+  settings.newUserKey = 1;
+  fs.writeFileSync(sp, JSON.stringify(settings, null, 2) + '\n');
+
+  const r = runBackupTool(['restore', '--from', dest], { HOME: home });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const after = JSON.parse(fs.readFileSync(sp, 'utf8'));
+  const guardGroups = after.hooks.PreToolUse.filter((g) =>
+    g.hooks.some((h) => String(h.command || '').includes('triple-crown-ship-guard.cjs')));
+  assert.strictEqual(guardGroups.length, 1, 'idempotent — no duplicate');
+  assert.strictEqual(after.newUserKey, 1);
+});
+
+test('settings restore: aborts without writing when current file is invalid JSON', () => {
+  const home = mkFakeHome();
+  const dest = path.join(home, 'backup');
+  assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
+
+  const sp = path.join(home, '.claude/settings.json');
+  fs.writeFileSync(sp, '{ broken json\n');
+
+  const r = runBackupTool(['restore', '--from', dest], { HOME: home });
+  assert.notStrictEqual(r.status, 0);
+  assert.match(r.stderr, /manual/i);
+  assert.strictEqual(fs.readFileSync(sp, 'utf8'), '{ broken json\n', 'no automatic write on conflict');
+});

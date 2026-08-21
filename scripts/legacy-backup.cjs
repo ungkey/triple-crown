@@ -27,7 +27,28 @@ function cleanup() {
     try { fs.rmSync(CLEANUP.pop(), { recursive: true, force: true }); } catch { /* best effort */ }
   }
 }
-function fail(msg, code = 1) { cleanup(); process.stderr.write(`legacy-backup: ${msg}\n`); process.exit(code); }
+// restore()의 actions[]는 지금까지 원래 try 블록 뒤에서만 flush됐다 — applyRestore() 이후
+// (CLAUDE.md/settings.json 재삽입 단계 포함) fail()로 빠지면 그 배열 전체가 버려졌다. 그중엔
+// "복원 대상은 ~/.crew-legacy-rollback-XXXXXX에 있다"는 줄도 있어, 사용자가 원본을 어디서
+// 찾을지 모르게 됐다. fail()은 process.exit로 즉시 끝나 finally도 안 돈다(위 cleanup()과 같은
+// 이유) — 그래서 여기서도 명시적 등록/flush로 해결한다: restore()가 자신의 actions 배열을
+// 등록해 두면, 그 이후 어디서 fail()이 나든 지금까지 쌓인 줄을 잃지 않고 stderr 종료 직전에
+// stdout으로 내보낸다.
+let pendingActions = null;
+function trackActions(actions, dryRun) { pendingActions = { actions, dryRun }; }
+function untrackActions() { pendingActions = null; }
+function flushPendingActions() {
+  if (!pendingActions) return;
+  const { actions, dryRun } = pendingActions;
+  pendingActions = null;
+  for (const a of actions) log((dryRun ? '[dry-run] ' : '') + a);
+}
+function fail(msg, code = 1) {
+  flushPendingActions();
+  cleanup();
+  process.stderr.write(`legacy-backup: ${msg}\n`);
+  process.exit(code);
+}
 function sha256(buf) { return 'sha256:' + crypto.createHash('sha256').update(buf).digest('hex'); }
 function exists(p) { try { fs.lstatSync(p); return true; } catch { return false; } }
 function readJson(p) { return JSON.parse(fs.readFileSync(p, 'utf8')); }
@@ -276,8 +297,59 @@ function restoreClaudeMd(home, from, manifest, actions, dryRun) {
   }
 }
 
+// settings.json은 CLAUDE.md와 같은 "일부 구간만 소유" 대상이다 (SEMANTIC, restoreOrder 제외).
+// sha256이 백업 시점과 같으면 통째로 되돌려도 안전하다. 다르면 사용자가 다른 훅/키를 추가했을
+// 수 있으므로 절대 덮어쓰지 않고, ship-guard 그룹의 존재를 술어로 재삽입만 시도한다 — 배열의
+// 다른 원소도, 다른 키도 손대지 않고 인덱스도 참조하지 않는다. 재삽입이 안전하다고 판단할 수
+// 없으면(파싱 실패, 또는 존재하는 hooks/hooks.PreToolUse의 타입 불일치) exit 3으로 멈추고 자동
+// 쓰기를 하지 않는다 — 이건 "부분 실패"가 아니라 정의된 상태다: restoreOrder 대상(벤더 트리·
+// capability·훅 파일·마킹된 스킬)과 CLAUDE.md 처리는 이미 끝났고, settings.json 하나만 수동
+// 병합을 기다린다. 그 두 사실을 메시지가 다 말해야 하고(§2.5.1), trackActions 덕분에 롤백
+// 디렉터리 안내도 이 exit에서 함께 살아남는다.
 function restoreSettings(home, tmp, from, manifest, actions, dryRun) {
-  actions.push('settings.json: (not implemented yet)');
+  if (!manifest.settings.present) { actions.push('settings.json: not in backup — skip'); return; }
+  const dst = path.join(home, '.claude', 'settings.json');
+  const backupRaw = fs.readFileSync(path.join(tmp, '.claude', 'settings.json'));
+  if (!exists(dst)) {
+    actions.push('settings.json: missing — restore full file from backup');
+    if (!dryRun) { fs.mkdirSync(path.dirname(dst), { recursive: true }); fs.writeFileSync(dst, backupRaw); }
+    return;
+  }
+  const currentRaw = fs.readFileSync(dst);
+  if (sha256(currentRaw) === manifest.settings.sha256) {
+    actions.push('settings.json: unchanged since backup — full restore is safe');
+    if (!dryRun) fs.writeFileSync(dst, backupRaw);
+    return;
+  }
+  if (!manifest.settings.hasHookGroup) {
+    actions.push('settings.json: changed since backup, no hook group to reinsert — leaving as is');
+    return;
+  }
+  const already = dryRun
+    ? 'this was a dry run — no restoreOrder targets and no settings.json bytes were written.'
+    : 'the restoreOrder targets (vendor tree, capabilities, hook file, marked skills) are already ' +
+      'restored; only ~/.claude/settings.json is left, awaiting a manual merge.';
+  const manual = `settings.json changed since backup and cannot be merged automatically — no automatic ` +
+    `write was performed to it. ${already} Reinsert the group from ` +
+    `${path.join(from, 'settings.json.hookgroup')} into hooks.PreToolUse manually, or resolve the ` +
+    `conflict and re-run restore.`;
+  let parsed;
+  try { parsed = JSON.parse(currentRaw.toString('utf8')); }
+  catch (err) { fail(`${manual} (parse error: ${err.message})`, 3); }
+  if (parsed.hooks !== undefined && (typeof parsed.hooks !== 'object' || parsed.hooks === null)) fail(manual, 3);
+  if (parsed.hooks && parsed.hooks.PreToolUse !== undefined && !Array.isArray(parsed.hooks.PreToolUse)) {
+    fail(manual, 3);
+  }
+  parsed.hooks = parsed.hooks || {};
+  parsed.hooks.PreToolUse = parsed.hooks.PreToolUse || [];
+  const present = parsed.hooks.PreToolUse.some((g) =>
+    Array.isArray(g && g.hooks) &&
+    g.hooks.some((h) => String((h && h.command) || '').includes(SHIP_GUARD)));
+  if (present) { actions.push('settings.json: ship-guard group already present — no-op'); return; }
+  const group = readJson(path.join(from, 'settings.json.hookgroup'));
+  parsed.hooks.PreToolUse.push(group);
+  actions.push('settings.json: reinserted ship-guard hook group (predicate match, appended)');
+  if (!dryRun) fs.writeFileSync(dst, JSON.stringify(parsed, null, 2) + '\n');
 }
 
 function samePath(a, b) {
@@ -366,6 +438,9 @@ function restore(opts) {
   assertRestoreHome(home, manifest, opts.allowForeignHome);   // 안전 계약 1 — 쓰기 전, dry-run도 동일
   const tmp = extractArchive(opts.from);
   const actions = [];
+  // applyRestore() 이후 fail()로 빠지는 경로(Task 5의 malformed CLAUDE.md 마커, Task 6의
+  // settings.json exit 3)도 여기까지 쌓인 안내를 잃지 않도록 등록해 둔다 — 위 fail() 정의 참고.
+  trackActions(actions, opts.dryRun);
   try {
     // 손으로 편집한 restoreOrder의 `..` 이스케이프가 $HOME 밖을 건드리지 못하게 쓰기 전에 막는다.
     const escaped = manifest.restoreOrder.filter((rel) => {
@@ -388,6 +463,7 @@ function restore(opts) {
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+  untrackActions();
   for (const a of actions) log((opts.dryRun ? '[dry-run] ' : '') + a);
   if (opts.dryRun) { log('dry-run: no writes performed'); return; }
   log('restore complete. Verify capability registrations with: gsd-tools capability list');
