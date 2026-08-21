@@ -381,10 +381,15 @@ function applyRestore(home, tmp, restoreOrder, actions) {
   const rollback = fs.mkdtempSync(path.join(home, '.crew-legacy-rollback-'));
   const moved = [];
   const created = [];
+  // dst -> actions[] 안에서 그 대상의 overwrite:/create: 줄 인덱스. 복사가 실제로 끝난 대상만
+  // 등록한다. 실패로 그 대상이 롤백되면 이 인덱스로 줄을 다시 지운다 — 리뷰 지적: 대상별로
+  // 미리 찍어두면, 나중에 그 대상만 롤백돼도 stdout이 "썼다"고 계속 거짓을 말하게 된다.
+  const actionIndexByDst = new Map();
   try {
     for (const rel of restoreOrder) {
       const dst = path.join(home, rel);
-      if (exists(dst)) {
+      const wasPresent = exists(dst);
+      if (wasPresent) {
         const saved = path.join(rollback, rel);
         fs.mkdirSync(path.dirname(saved), { recursive: true });
         fs.renameSync(dst, saved);                 // $HOME 내부 — cross-device 아님
@@ -394,6 +399,9 @@ function applyRestore(home, tmp, restoreOrder, actions) {
       }
       fs.mkdirSync(path.dirname(dst), { recursive: true });
       fs.cpSync(path.join(tmp, rel), dst, { recursive: true });
+      // 이 대상은 복사가 실제로 끝난 뒤에만 로그한다 (리뷰 지적 — 미리 찍어두지 않는다).
+      actions.push(`${wasPresent ? 'overwrite' : 'create'}: ~/${rel}`);
+      actionIndexByDst.set(dst, actions.length - 1);
     }
   } catch (err) {
     // 롤백은 항목 단위로 최선을 다한다 — 하나가 막혀도(:rmSync/:renameSync) 나머지 시도를
@@ -412,6 +420,16 @@ function applyRestore(home, tmp, restoreOrder, actions) {
     }
     const unrestored = moved.filter((m) => exists(m.saved)).map((m) => m.dst);
     const notCleaned = created.filter((dst) => exists(dst));
+
+    // 되돌리는 데 성공한 대상은 더 이상 "overwrite/create"가 아니다 — 찍어둔 줄을 지운다.
+    // 되돌리지 못한 대상(unrestored/notCleaned)만 실제로 여전히 덮어써진 상태이므로 남긴다.
+    const stillWritten = new Set([...unrestored, ...notCleaned]);
+    const toRetract = [...actionIndexByDst.entries()]
+      .filter(([dst]) => !stillWritten.has(dst))
+      .map(([, idx]) => idx)
+      .sort((a, b) => b - a);            // 뒤에서부터 splice해야 앞쪽 인덱스가 안 밀린다
+    for (const idx of toRetract) actions.splice(idx, 1);
+
     if (unrestored.length || notCleaned.length) {
       // 계약 3의 보장은 무조건이므로, 전부 되돌리지 못했을 땐 최소한 롤백 디렉터리 경로와
       // 아직 못 되돌린 항목을 알려야 한다 — 사용자가 직접 복구할 수 있게.
@@ -454,10 +472,17 @@ function restore(opts) {
     if (missing.length) {
       fail(`archive is missing restore targets: ${missing.join(', ')} — nothing was changed`, 2);
     }
-    for (const rel of manifest.restoreOrder) {
-      actions.push(`${exists(path.join(home, rel)) ? 'overwrite' : 'create'}: ~/${rel}`);
+    if (opts.dryRun) {
+      // dry-run에서는 applyRestore()가 아예 실행되지 않으므로 여기서 "예정된" 줄을 미리 찍는다 —
+      // 예측이라고 [dry-run] 접두어가 이미 붙어 있으므로 미리 나열해도 진실과 어긋나지 않는다.
+      for (const rel of manifest.restoreOrder) {
+        actions.push(`${exists(path.join(home, rel)) ? 'overwrite' : 'create'}: ~/${rel}`);
+      }
+    } else {
+      // 실쓰기 경로: 각 대상이 실제로 복사를 마친 시점에만 applyRestore()가 그 줄을 찍는다 —
+      // 미리 찍어두면 중간 실패로 롤백된 대상까지 "썼다"고 stdout이 거짓을 말하게 된다(리뷰 지적).
+      applyRestore(home, tmp, manifest.restoreOrder, actions);
     }
-    if (!opts.dryRun) applyRestore(home, tmp, manifest.restoreOrder, actions);
     restoreClaudeMd(home, opts.from, manifest, actions, opts.dryRun);
     restoreSettings(home, tmp, opts.from, manifest, actions, opts.dryRun);
   } finally {

@@ -225,6 +225,18 @@ test('mid-restore failure rolls back a newly-created target that already succeed
       fs.existsSync(path.join(home, '.triple-crown')), false,
       'a target that did not exist before restore must not survive a mid-restore rollback');
 
+    // 회귀 검증(리뷰 라운드 1): stdout이 위에서 부재를 증명한 경로들에 대해 "썼다"고 주장하면
+    // 안 된다 — applyRestore()가 각 대상을 실제로 복사한 직후에만 overwrite:/create: 줄을
+    // 찍고, 그 대상이 자신의 롤백으로 되돌려지면 그 줄을 다시 지운다(actionIndexByDst). 이
+    // 시나리오는 처리된 네 항목(.triple-crown, capabilities 셋) 전부가 실패 지점 전에 성공했다가
+    // 전량 롤백됐으므로, stdout에는 어떤 overwrite:/create: 줄도 남아 있으면 안 된다.
+    assert.doesNotMatch(r.stdout, /create: ~\/\.triple-crown/,
+      `a rolled-back target must not be claimed as written in stdout:\n${r.stdout}`);
+    assert.doesNotMatch(r.stdout, /create: ~\/\.claude\/hooks\/triple-crown-ship-guard\.cjs/,
+      `the failing target itself must not be claimed as written in stdout:\n${r.stdout}`);
+    assert.doesNotMatch(r.stdout, /(overwrite|create): ~\//,
+      `a fully rolled-back restore must not claim any write in stdout, got:\n${r.stdout}`);
+
     // 이미 존재했던 대상(capabilities)은 rename-복원으로 온전히 되돌아온다.
     assert.strictEqual(
       fs.readFileSync(path.join(home, '.gsd/capabilities/triple-gstack/capability.json'), 'utf8'),
