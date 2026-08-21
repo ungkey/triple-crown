@@ -9,6 +9,7 @@
 > - v1.0 (2026-08-20): 초판
 > - v1.1 (2026-08-20): 전수 재검증 정오표 반영(§0.4), F5 `crew-concept` 신설(컨셉 기획→프로토타입 단계 누락 보완), §9 결정 확정(권장안 채택), gstack 설치 완료 반영
 > - v1.2 (2026-08-20): 스킬 어순 `crew` 선두로 확정(§4.2) + GSD 접두사 동작 소스 실측(§4.1), 마이그레이션을 제거-후-재설치로 단순화(§7.2, 실측 설치 상태 §7.1 근거), D13 신설(`$HOME` 설치 시 scope 붕괴)
+> - v1.3 (2026-08-22): M1b 실측 정정 노트 추가(§4.3 · §5.1) — GSD 1.11.0 단일 항목 capMap 이 교차 capability `requires`·`consumes` 를 거부하므로 §5.1 의 9개 분해안은 그대로 설치되지 않는다. 실제 산출은 4개. **분해안 본문은 M2 이후를 위해 보존한다**
 
 ---
 
@@ -389,6 +390,8 @@ gsd-crew-review   (초판)   →   crew-gsd-review   (확정)
 
 **충돌 검사 결과**: 현재 설치된 스킬 150개 중 `crew-` 로 시작하는 것은 없다. 충돌 없음.
 
+> **정정 (2026-08-22, M1b 실측).** 위 표의 capability 행 두 개(9개 분해)는 GSD 1.11.0 에서 성립하지 않는다. 실제로 만들어진 것은 4개다 — §5.1 끝의 정정 노트를 볼 것.
+
 ---
 
 ## 5. Capability 재구성
@@ -449,6 +452,37 @@ crew-guide       role=feature  tier=core      읽기 전용 상태 머신
   requires: []
   skills: [crew]
 ```
+
+> **정정 (2026-08-22, M1b 실측). 위 분해안은 그대로 두되, 아래 사실과 함께 읽는다.**
+>
+> **GSD 1.11.0 은 위 분해안을 설치할 수 없다.** `gsd-core src/capability-source.cts:836` 이
+> 검증 맵을 `new Map([[id, cap]])` — **설치 중인 capability 하나뿐** — 으로 만든다. 결과:
+>
+> - 위에 다섯 번 적힌 `requires: [crew-core]` 는 `crew-core` 가 이미 active 여도
+>   `requires "X" which does not exist` 로 **거부된다**. `crew-demo` 의
+>   `requires: [crew-core, crew-quality]` 도 같다.
+> - 같은 결함이 `consumes` 도 문다 — 다른 capability 가 produce 하는 아티팩트를 consume 하면
+>   `never produced by any host artifact or capability hook` 으로 거부된다.
+>
+> **M1b 가 실제로 만든 것은 9개가 아니라 4개다** — `crew-discipline` · `crew-quality` ·
+> `crew-ship` · `crew-guide`. `crew-quality` 에서 릴리스 표면만 `crew-ship` 으로 떼어냈다
+> (`v0.7.0-m1b`). 네 capability 모두 `requires: []` 이고, 의존 순서는 `bin/crew.cjs` 의
+> `CAPABILITIES` 배열이 소유한다.
+>
+> - **`crew-security` 는 보류다.** `crew-gsd-sec` 의 `execute:post` step 이 `crew-gsd-qa` 가
+>   만드는 `GSTACK-QA.json` 을 consume 한다. 떼어내면 위 두 번째 규칙에 걸리고, 간선을 지워
+>   피하면 위상 정렬이 바뀌어 `review → qa → sec` 이 `review → sec → qa` 로 렌더된다(실측).
+>   **아티팩트 사슬로 묶인 step 은 같은 capability 안에 있어야 한다.** GSD 가 단일 항목
+>   capMap 을 고친 뒤에 다시 본다.
+> - **`crew-core`(M2) · `crew-flow`(M2) · `crew-demo`(M5) · `crew-concept`(M7)** 은 각자 시점
+>   소관이다(`docs/V0.7-IMPLEMENTATION-DESIGN.md` §5 · §10). 공유 lib 는 §5.2 방안 A(빌드 시
+>   번들 복제)로 M0 에서 이미 해결됐으므로, **의존 대상**으로서의 `crew-core` 는 단일 항목
+>   capMap 이 고쳐진 뒤에야 의미가 있다.
+>
+> M2 이후가 이 절의 논거(§5.3 분해의 실익, §5.2 방안 A)를 계속 쓰기 때문에 분해안 자체는
+> 지우지 않았다. 다만 **`requires:` 줄과 capability 개수는 위 제약 아래에서 다시 계산해야
+> 한다.** 계획·실측·펜스는 `docs/superpowers/plans/2026-08-21-m1b-capability-split.md` 와
+> `e2e/contract/capability-split.test.cjs`(펜스 8종), 매핑은 `docs/RENAME-MAP.md` 에 있다.
 
 ### 5.2 공유 라이브러리 문제 — 반드시 먼저 해결
 

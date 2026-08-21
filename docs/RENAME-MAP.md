@@ -42,6 +42,62 @@
 config 루트·capability id·마커가 바뀌므로 이것은 breaking rename 이며, M7 릴리스
 노트에 그렇게 표시된다.
 
+## M1b 분해 — `crew-ship` (v0.7.0-m1b)
+
+`v0.7.0-m1b` 에서 `crew-quality` 의 **릴리스 표면**을 `crew-ship` 으로 떼어냈다. capability 는
+3개에서 **4개**가 됐다 — `crew-discipline` · `crew-quality` · `crew-ship` · `crew-guide`.
+`bin/crew.cjs` 의 `CAPABILITIES` 배열이 이 순서를 소유하고, `e2e/contract/capability-split.test.cjs`
+의 첫 펜스가 디스크와의 완전 일치를 매 커밋 검사한다.
+
+| 구분 | 구 위치 (`crew-quality`) | 신 위치 (`crew-ship`) |
+|---|---|---|
+| check | `checks/ship-guard-control.cjs` | `checks/ship-guard-control.cjs` |
+| check | `checks/release-ledger.cjs` | `checks/release-ledger.cjs` |
+| check | `checks/canary-session.cjs` | `checks/canary-session.cjs` |
+| check | `checks/docs-release-session.cjs` | `checks/docs-release-session.cjs` |
+| check | `checks/retro-record.cjs` | `checks/retro-record.cjs` |
+| 스킬 | `skills/crew-gsd-postship/` | `skills/crew-gsd-postship/` |
+| 스킬 | `skills/crew-gsd-release/` | `skills/crew-gsd-release/` |
+| step | `ship:post` (`crew-gsd-postship`) | 값 동일 — 소유 capability 만 바뀐다 |
+| gate | `ship:pre` (`ship-guard-control.cjs arm-gsd`) | 값 동일 — 소유 capability 만 바뀐다 |
+| config 13개 | `crew.ship.*` 3 · `crew.gstack.post_ship_enabled` · `crew.gstack.document_release_*` 3 · `crew.gstack.canary_*` 3 · `crew.gstack.retro_*` 3 | 동일 키, 소유자만 `crew-ship` |
+
+`crew-quality` 는 config 키 12개(plan review 1 · code review 3 · qa 2 · security 6), check 11개,
+스킬 3개(`crew-gsd-review` · `crew-gsd-qa` · `crew-gsd-sec`)를 유지한다. 13 + 12 = 25 로, 상위 문서
+`docs/RESTRUCTURE-PLAN.md` D5 가 센 "config 키 25개"와 같다 — **키는 하나도 늘거나 줄지 않았다.**
+
+**옮긴 check 다섯은 내용이 한 글자도 바뀌지 않았다** — `git diff -M --find-renames --summary
+v0.7.0-m1a v0.7.0-m1b -- capabilities` 가 다섯 개 전부 `(100%)` 로 잡는다. 스킬 두 개는 `CREW_CAP`
+대입만 `crew-ship` 으로 재타깃했다. `crew-ship/checks/lib/` 는 M0 빌드 규약대로
+`repo-state-lib.cjs` · `resolve-phase-dir.cjs` 사본과 `LIB-HASH.json` 을 새로 갖는다 —
+`crew-quality/checks/lib/` 는 손대지 않았다(`evidence-store.cjs` 포함 3개 그대로).
+
+### `crew-security` 가 왜 없는가
+
+`docs/RESTRUCTURE-PLAN.md` §5.1 의 분해안과 `docs/V0.7-IMPLEMENTATION-DESIGN.md` §5 는 M1b 가
+`crew-quality` 를 9개로 쪼갠다고 적었다. **GSD 1.11.0 에서는 성립하지 않는다.**
+`gsd-core src/capability-source.cts:836` 이 검증 맵을 `new Map([[id, cap]])` — **설치 중인
+capability 하나뿐** — 으로 만들기 때문에
+
+- 교차 capability `requires` 는 대상이 이미 active 여도 `requires "X" which does not exist` 로
+  거부된다. 그래서 네 capability 전부 `requires: []` 이고, 의존 순서는 `CAPABILITIES` 배열이
+  대신 소유한다.
+- 교차 capability `consumes` 는 `never produced by any host artifact or capability hook` 으로
+  거부된다.
+
+`crew-gsd-sec` 의 `execute:post` step 은 `crew-gsd-qa` 가 만드는 `GSTACK-QA.json` 을 consume 한다.
+떼어내면 두 번째 규칙에 걸려 설치가 거부되고, 간선을 지워 피하면 GSD 의 위상 정렬
+(`capability-validator.cjs` `topoSortHookEntries`)이 바뀌어 `review → qa → sec` 사슬이
+`review → sec → qa` 로 렌더된다(실측). 즉 **아티팩트 사슬로 묶인 step 은 같은 capability 안에
+있어야 한다.** `crew-ship` 이 먼저 나갈 수 있었던 이유는 그 `ship:post` step 의 `consumes` 가
+GSD 자신이 만드는 `UAT.md` 하나뿐이라 사슬을 끊지 않기 때문이다.
+
+`crew-core`(M2) · `crew-flow`(M2) · `crew-demo`(M5) · `crew-concept`(M7) 도 M1b 에 없다 — 각자
+시점 소관이다(`docs/V0.7-IMPLEMENTATION-DESIGN.md` §5 · §10). `crew-security` 는 GSD 가 단일 항목
+capMap 을 고친 뒤에 다시 본다. 실측 근거는
+`docs/superpowers/plans/2026-08-21-m1b-capability-split.md` 에, 계약은
+`e2e/contract/capability-split.test.cjs` 의 펜스 8종에 있다.
+
 ## 바꾸지 않은 것
 
 - **아티팩트 이름** — `GSTACK-CODE-REVIEW.json`, `GSTACK-QA.json`, `GSTACK-PLAN-REVIEW.json`,
@@ -115,7 +171,7 @@ config 루트·capability id·마커가 바뀌므로 이것은 breaking rename �
 (`:25`)가 그 등록을 그대로 두고 새 `crew-ship-guard.cjs` 그룹을 별도로 추가한다 —
 Bash 호출마다 옛 가드와 새 가드가 **둘 다** 실행된다. 옛 가드는 이제 아무도 쓰지
 않는 `.planning/.triple-crown/ship-auth.json` 을 읽으므로
-(`capabilities/crew-quality/checks/ship-guard-control.cjs:9`, `guards/crew-ship-guard.cjs:120`
+(`capabilities/crew-ship/checks/ship-guard-control.cjs:9`, `guards/crew-ship-guard.cjs:120`
 은 둘 다 `.planning/.crew` 를 쓴다) 항상 실패해 `guards/crew-ship-guard.cjs:169` 의
 최종 `deny()` 로 떨어진다 — 이런 머신에서는 **모든 `git push`/PR 이 막힌다.** 그런데
 `bin/crew.cjs:540` 의 `doctor` 는 `crew-ship-guard.cjs` 를 포함하는 명령만 세므로 이
