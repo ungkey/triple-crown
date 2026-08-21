@@ -7,6 +7,12 @@ const path = require('path');
 const cp = require('child_process');
 const { mkFakeHome, runBackupTool, CAPABILITIES } = require('./helpers/fake-home.cjs');
 
+// chmod 555는 root에서 무효다 — root로 도는 CI 컨테이너에서 아래 두 파괴-경로 테스트는
+// 조용한 vacuous pass가 아니라 실제 실패로 게이트를 막는다. 권한 거부를 실제로 일으킬 수
+// 없는 환경에서는 건너뛴다(거짓 green이 아니라 명시적 skip).
+const IS_ROOT = typeof process.getuid === 'function' && process.getuid() === 0;
+const ROOT_SKIP = 'chmod 555 does not deny root — this test needs a non-root uid';
+
 test('backup captures all legacy targets into manifest + archive', () => {
   const home = mkFakeHome();
   const dest = path.join(home, 'backup');
@@ -46,11 +52,11 @@ test('backup refuses a non-empty destination and an empty home', () => {
   fs.mkdirSync(dest, { recursive: true });
   fs.writeFileSync(path.join(dest, 'existing'), 'x');
   const r = runBackupTool(['backup', '--dest', dest], { HOME: home });
-  assert.notStrictEqual(r.status, 0);
+  assert.strictEqual(r.status, 2, r.stderr);
 
   const emptyHome = fs.mkdtempSync(path.join(require('os').tmpdir(), 'crew-empty-'));
   const r2 = runBackupTool(['backup', '--dest', path.join(emptyHome, 'b')], { HOME: emptyHome });
-  assert.notStrictEqual(r2.status, 0);
+  assert.strictEqual(r2.status, 2, r2.stderr);
   assert.match(r2.stderr, /nothing to back up/i);
 });
 
@@ -72,7 +78,7 @@ test('detect reports the inventory of any home and never fails on an absent inst
   assert.match(stock.stdout, /^legacy targets: 0$/m, 'user-owned files are not a legacy install');
   // 같은 술어를 공유하므로 backup도 여기서 거부해야 한다.
   const b = runBackupTool(['backup', '--dest', path.join(emptyHome, 'b')], { HOME: emptyHome });
-  assert.notStrictEqual(b.status, 0);
+  assert.strictEqual(b.status, 2, b.stderr);
   assert.match(b.stderr, /nothing to back up/i);
 
   // 레거시가 설치된 PC — 같은 명령이 실제 인벤토리를 센다.
@@ -120,7 +126,7 @@ test('detect tolerates a corrupted settings.json (exit 0, UNDETERMINED) while ba
   // backup must still fail loudly on the same corrupted file — a silent
   // hasHookGroup:false in the manifest would be a false backup.
   const b = runBackupTool(['backup', '--dest', path.join(home, 'b')], { HOME: home });
-  assert.notStrictEqual(b.status, 0);
+  assert.strictEqual(b.status, 2, b.stderr);
   assert.match(b.stderr, /not valid JSON/i);
 });
 
@@ -137,7 +143,7 @@ test('verify passes on intact backup and fails on tampered manifest', () => {
   target.sha256 = 'sha256:' + '0'.repeat(64);
   fs.writeFileSync(mp, JSON.stringify(manifest, null, 2) + '\n');
   const bad = runBackupTool(['verify', '--from', dest], { HOME: home });
-  assert.notStrictEqual(bad.status, 0);
+  assert.strictEqual(bad.status, 2, bad.stderr);
   assert.match(bad.stdout + bad.stderr, /mismatch/i);
 });
 
@@ -170,13 +176,14 @@ test('restore refuses a backup taken from a different home', () => {
   const otherVersion = fs.readFileSync(path.join(other, '.triple-crown/VERSION'), 'utf8');
 
   const refused = runBackupTool(['restore', '--from', dest], { HOME: other });
-  assert.notStrictEqual(refused.status, 0, 'foreign-home restore must be refused');
+  assert.strictEqual(refused.status, 4,
+    `foreign-home restore must be refused with the documented code 4:\n${refused.stderr}`);
   assert.match(refused.stderr, /different home/i);
   assert.strictEqual(fs.readFileSync(path.join(other, '.triple-crown/VERSION'), 'utf8'), otherVersion,
     'refusal must not touch the current home');
 
   const refusedDry = runBackupTool(['restore', '--from', dest, '--dry-run'], { HOME: other });
-  assert.notStrictEqual(refusedDry.status, 0, '--dry-run must not bypass the refusal');
+  assert.strictEqual(refusedDry.status, 4, '--dry-run must not bypass the refusal');
 
   const allowed = runBackupTool(
     ['restore', '--from', dest, '--dry-run', '--allow-foreign-home'], { HOME: other });
@@ -184,7 +191,8 @@ test('restore refuses a backup taken from a different home', () => {
   assert.match(allowed.stdout + allowed.stderr, /WARNING/);
 });
 
-test('mid-restore failure rolls back a newly-created target that already succeeded (exit 2, home unchanged)', () => {
+test('mid-restore failure rolls back a newly-created target that already succeeded (exit 2, home unchanged)', (t) => {
+  if (IS_ROOT) { t.skip(ROOT_SKIP); return; }
   const home = mkFakeHome();
   const dest = path.join(home, 'backup');
   assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
@@ -301,7 +309,8 @@ test('restore refuses a restoreOrder entry that escapes $HOME (exit 2, before an
     'aborting on an escape must not touch the legitimate home targets either');
 });
 
-test('rollback recovers unrelated targets even when one entry is structurally blocked (best-effort undo)', () => {
+test('rollback recovers unrelated targets even when one entry is structurally blocked (best-effort undo)', (t) => {
+  if (IS_ROOT) { t.skip(ROOT_SKIP); return; }
   const home = mkFakeHome();
   const dest = path.join(home, 'backup');
   assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
@@ -409,7 +418,7 @@ test('restore rolls back and leaves home unchanged when a copy fails midway', ()
   fs.writeFileSync(path.join(home, '.claude/hooks'), 'not a directory\n');
 
   const r = runBackupTool(['restore', '--from', dest], { HOME: home });
-  assert.notStrictEqual(r.status, 0, 'mid-copy failure must abort');
+  assert.strictEqual(r.status, 2, `mid-copy failure must abort with code 2:\n${r.stderr}`);
   assert.match(r.stderr, /rolled back/i);
   assert.strictEqual(fs.readFileSync(path.join(home, '.triple-crown/VERSION'), 'utf8'), versionBefore,
     'targets replaced before the failure must be back at their pre-restore state');
@@ -564,7 +573,189 @@ test('settings restore: aborts without writing when current file is invalid JSON
   fs.writeFileSync(sp, '{ broken json\n');
 
   const r = runBackupTool(['restore', '--from', dest], { HOME: home });
-  assert.notStrictEqual(r.status, 0);
+  // 3은 이 브랜치의 유일한 "정의된 상태" 코드다 — 2(복구 중단·롤백 완료)로 퇴화하면 런북이
+  // "수동 병합 대기"와 "중단됨"을 구분할 수 없게 된다. 정확히 고정한다.
+  assert.strictEqual(r.status, 3,
+    `settings conflict is a defined state, not an abort:\nstdout:\n${r.stdout}\nstderr:\n${r.stderr}`);
   assert.match(r.stderr, /manual/i);
   assert.strictEqual(fs.readFileSync(sp, 'utf8'), '{ broken json\n', 'no automatic write on conflict');
+
+  // trackActions/flushPendingActions의 존재 이유 그 자체: exit 3에서도 "원본은 여기 있다"는
+  // 안내가 살아남아야 한다. applyRestore가 이미 6개 대상을 교체한 뒤의 종료이기 때문이다.
+  const rollbackDirs = fs.readdirSync(home).filter((e) => e.startsWith('.crew-legacy-rollback-'));
+  assert.strictEqual(rollbackDirs.length, 1,
+    `replaced originals must be kept for rollback, got: ${JSON.stringify(rollbackDirs)}`);
+  assert.ok(r.stdout.includes(rollbackDirs[0]),
+    `the rollback directory must be disclosed on an exit-3 stop:\nstdout:\n${r.stdout}`);
+});
+
+// --- C1: 백업의 side file 2종(CLAUDE.md.fragment / settings.json.hookgroup)은 archive.tar.gz
+// **밖**에 있고, verifyArchive는 manifest.files(=tar 내용)만 순회한다. 그래서 둘 중 하나가
+// 없거나 손상돼도 verify가 "verify OK"를 찍었고, 그 직후 restore가 홈의 restoreOrder 대상을
+// 전부 교체한 다음 네이티브 예외로 죽었다 — exit 1(계약은 2), stdout 비어 있음, 원본을 옮겨둔
+// ~/.crew-legacy-rollback-XXXXXX 위치는 어디에도 안 나옴. 적대자 없이 rsync 부분 복사·정리
+// 스크립트·동기화 경합만으로 도달한다.
+
+test('restore refuses a backup whose CLAUDE.md.fragment is missing (exit 2, nothing replaced)', () => {
+  const home = mkFakeHome();
+  const dest = path.join(home, 'backup');
+  assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
+
+  // 홈을 아카이브와 다르게 만들어 둔다 — 교체가 실제로 일어났는지 바이트로 구분하기 위해.
+  const sentinel = '9.9.9-local\n';
+  fs.writeFileSync(path.join(home, '.triple-crown/VERSION'), sentinel);
+
+  fs.rmSync(path.join(dest, 'CLAUDE.md.fragment'));
+
+  const r = runBackupTool(['restore', '--from', dest], { HOME: home });
+  assert.strictEqual(r.status, 2,
+    `a backup missing a side file must abort with 2, not die with 1:\nstdout:\n${r.stdout}\nstderr:\n${r.stderr}`);
+  assert.match(r.stdout + r.stderr, /CLAUDE\.md\.fragment/,
+    'the failure must name the side file the backup is missing');
+  assert.strictEqual(fs.readFileSync(path.join(home, '.triple-crown/VERSION'), 'utf8'), sentinel,
+    'the check must run before any target is replaced — nothing was changed');
+  assert.deepStrictEqual(fs.readdirSync(home).filter((e) => e.startsWith('.crew-legacy-rollback-')), [],
+    'nothing was replaced, so no rollback directory may be left behind');
+});
+
+test('restore refuses a backup whose settings.json.hookgroup is missing or corrupt (exit 2, nothing replaced)', () => {
+  const home = mkFakeHome();
+  const dest = path.join(home, 'backup');
+  assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
+
+  // hookgroup 파일은 sha가 어긋나고 그룹이 사라진 conflict 경로에서만 읽힌다 — 그 상태를 만든다.
+  const sp = path.join(home, '.claude/settings.json');
+  const settings = JSON.parse(fs.readFileSync(sp, 'utf8'));
+  settings.hooks.PreToolUse = [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'my-user-hook.sh' }] }];
+  fs.writeFileSync(sp, JSON.stringify(settings, null, 2) + '\n');
+
+  const sentinel = '9.9.9-local\n';
+  fs.writeFileSync(path.join(home, '.triple-crown/VERSION'), sentinel);
+
+  const hg = path.join(dest, 'settings.json.hookgroup');
+  fs.rmSync(hg);
+  const missing = runBackupTool(['restore', '--from', dest], { HOME: home });
+  assert.strictEqual(missing.status, 2,
+    `missing hookgroup must abort with 2:\nstdout:\n${missing.stdout}\nstderr:\n${missing.stderr}`);
+  assert.match(missing.stdout + missing.stderr, /settings\.json\.hookgroup/);
+  assert.strictEqual(fs.readFileSync(path.join(home, '.triple-crown/VERSION'), 'utf8'), sentinel,
+    'nothing may be replaced before the side file is known to be usable');
+  assert.deepStrictEqual(fs.readdirSync(home).filter((e) => e.startsWith('.crew-legacy-rollback-')), []);
+
+  // 존재하지만 파싱이 안 되는 경우도 같은 계약이다 — 부분 복사로 흔한 상태다.
+  fs.writeFileSync(hg, '{ "matcher": "Bash", truncated\n');
+  const corrupt = runBackupTool(['restore', '--from', dest], { HOME: home });
+  assert.strictEqual(corrupt.status, 2,
+    `corrupt hookgroup must abort with 2:\nstdout:\n${corrupt.stdout}\nstderr:\n${corrupt.stderr}`);
+  assert.match(corrupt.stdout + corrupt.stderr, /settings\.json\.hookgroup/);
+  assert.strictEqual(fs.readFileSync(path.join(home, '.triple-crown/VERSION'), 'utf8'), sentinel);
+  assert.deepStrictEqual(fs.readdirSync(home).filter((e) => e.startsWith('.crew-legacy-rollback-')), []);
+});
+
+test('restore that dies after replacing targets exits 2 and discloses the rollback directory', () => {
+  const home = mkFakeHome();
+  const dest = path.join(home, 'backup');
+  assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
+
+  // 백업 이후 ~/CLAUDE.md가 디렉터리가 된 홈. 선검증으로는 못 막는다(백업 쪽은 멀쩡하다) —
+  // restoreClaudeMd의 readFileSync가 EISDIR로 네이티브 예외를 던지는데, 그 시점엔
+  // restoreOrder 대상 6개가 이미 교체된 뒤다. 여기서 flush를 건너뛰면 사용자는 절반 복구된
+  // 홈만 남고 원본이 어디로 갔는지 알 길이 없다.
+  fs.rmSync(path.join(home, 'CLAUDE.md'));
+  fs.mkdirSync(path.join(home, 'CLAUDE.md'));
+
+  const r = runBackupTool(['restore', '--from', dest], { HOME: home });
+  assert.strictEqual(r.status, 2,
+    `an unexpected throw must land on the documented code 2, not a raw exit 1:\nstdout:\n${r.stdout}\nstderr:\n${r.stderr}`);
+
+  const rollbackDirs = fs.readdirSync(home).filter((e) => e.startsWith('.crew-legacy-rollback-'));
+  assert.strictEqual(rollbackDirs.length, 1,
+    `the replaced originals must still be on disk, got: ${JSON.stringify(rollbackDirs)}`);
+  assert.ok(r.stdout.includes(rollbackDirs[0]),
+    `the rollback directory holding the originals must be disclosed:\nstdout:\n${r.stdout}\nstderr:\n${r.stderr}`);
+});
+
+test('verify fails on a backup with a missing, tampered, or corrupt side file (exit 2)', () => {
+  const home = mkFakeHome();
+  const dest = path.join(home, 'backup');
+  assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
+  assert.strictEqual(runBackupTool(['verify', '--from', dest], { HOME: home }).status, 0, 'control: intact backup verifies');
+
+  const fragPath = path.join(dest, 'CLAUDE.md.fragment');
+  const fragBytes = fs.readFileSync(fragPath);
+
+  fs.rmSync(fragPath);
+  const gone = runBackupTool(['verify', '--from', dest], { HOME: home });
+  assert.strictEqual(gone.status, 2,
+    `verify must not certify a backup restore cannot use:\nstdout:\n${gone.stdout}\nstderr:\n${gone.stderr}`);
+  assert.match(gone.stdout + gone.stderr, /CLAUDE\.md\.fragment/);
+
+  // 존재하지만 내용이 바뀐 경우 — manifest.claudeMd.fragmentSha256이 실제로 대조되는지.
+  fs.writeFileSync(fragPath, '<!-- tampered, not the recorded fragment -->\n');
+  const tampered = runBackupTool(['verify', '--from', dest], { HOME: home });
+  assert.strictEqual(tampered.status, 2,
+    `fragmentSha256 must actually be checked:\nstdout:\n${tampered.stdout}\nstderr:\n${tampered.stderr}`);
+  assert.match(tampered.stdout + tampered.stderr, /CLAUDE\.md\.fragment/);
+
+  fs.writeFileSync(fragPath, fragBytes);
+  fs.writeFileSync(path.join(dest, 'settings.json.hookgroup'), '{ "matcher": "Bash", truncated\n');
+  const badGroup = runBackupTool(['verify', '--from', dest], { HOME: home });
+  assert.strictEqual(badGroup.status, 2,
+    `an unparseable hook group must not verify:\nstdout:\n${badGroup.stdout}\nstderr:\n${badGroup.stderr}`);
+  assert.match(badGroup.stdout + badGroup.stderr, /settings\.json\.hookgroup/);
+});
+
+// --- I1: detect는 "항상 exit 0"이 계약이다 (Task 9 Step 1이 이 코드로 파괴 단계 진입을 정한다).
+// 손상된 settings.json은 이미 막혀 있었지만, 평범한 홈 상태 두 가지가 아직 raw 스택으로 죽였다.
+
+test('detect tolerates a dangling symlink in ~/.claude/skills (exit 0, UNDETERMINED)', () => {
+  // 사용자가 나중에 옮겨버린 저장소를 가리키는 스킬 심볼릭 링크 — 완전히 평범한 상태다.
+  // statSync는 링크를 따라가므로 ENOENT로 던졌다.
+  const home = mkFakeHome();
+  fs.symlinkSync(path.join(home, 'moved-away-repo', 'skill'), path.join(home, '.claude/skills/ghost'));
+
+  const d = runBackupTool(['detect'], { HOME: home });
+  assert.strictEqual(d.status, 0,
+    `detect must never fail on an ordinary home:\nstdout:\n${d.stdout}\nstderr:\n${d.stderr}`);
+  assert.match(d.stdout, /UNDETERMINED/, 'the unresolvable entry must be surfaced, not silently dropped');
+  assert.match(d.stdout, /ghost/, 'the report must name the affected item');
+  // 판정 자체는 계속 동작한다 — 나머지 인벤토리를 정상적으로 센다.
+  const n = Number(d.stdout.match(/^legacy targets: (\d+)$/m)[1]);
+  assert.ok(n > 0, `the rest of the inventory must still be counted, got ${n}`);
+});
+
+test('detect tolerates ~/CLAUDE.md being a directory (exit 0, UNDETERMINED) while backup refuses it', () => {
+  const home = mkFakeHome();
+  fs.rmSync(path.join(home, 'CLAUDE.md'));
+  fs.mkdirSync(path.join(home, 'CLAUDE.md'));
+
+  const d = runBackupTool(['detect'], { HOME: home });
+  assert.strictEqual(d.status, 0,
+    `detect must never fail on an unreadable ~/CLAUDE.md:\nstdout:\n${d.stdout}\nstderr:\n${d.stderr}`);
+  assert.match(d.stdout, /CLAUDE\.md routing marker: UNDETERMINED/);
+
+  // backup은 같은 홈에서 조용히 claudeMd.present:false를 기록하면 안 된다 — 손상된
+  // settings.json과 같은 규약으로 시끄럽게 거부한다(거짓 백업 금지).
+  const b = runBackupTool(['backup', '--dest', path.join(home, 'b')], { HOME: home });
+  assert.strictEqual(b.status, 2, `backup must refuse loudly:\nstderr:\n${b.stderr}`);
+  assert.match(b.stderr, /CLAUDE\.md/);
+});
+
+test('a restore that replaces nothing leaves no rollback directory and claims none', () => {
+  const home = mkFakeHome();
+  const dest = path.join(home, 'backup');
+  assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
+
+  // restoreOrder 대상을 전부 지우면 교체할 것이 하나도 없는 restore가 된다 — 그런데도
+  // 롤백 디렉터리를 미리 만들어 두면 실제 $HOME에 빈 ~/.crew-legacy-rollback-XXXXXX가
+  // 매 실행마다 쌓이고, "replaced targets kept..."라는 거짓 안내까지 찍혔다.
+  const manifest = JSON.parse(fs.readFileSync(path.join(dest, 'MANIFEST.json'), 'utf8'));
+  for (const rel of manifest.restoreOrder) fs.rmSync(path.join(home, rel), { recursive: true, force: true });
+
+  const r = runBackupTool(['restore', '--from', dest], { HOME: home });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.deepStrictEqual(fs.readdirSync(home).filter((e) => e.startsWith('.crew-legacy-rollback-')), [],
+    'a restore that replaced nothing must not leave an empty rollback directory in $HOME');
+  assert.doesNotMatch(r.stdout, /replaced targets kept/,
+    `nothing was replaced — the rollback notice must not be printed:\n${r.stdout}`);
 });

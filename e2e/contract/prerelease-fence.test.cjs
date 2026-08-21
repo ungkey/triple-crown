@@ -31,7 +31,8 @@ test('prerelease VERSION refuses install without --allow-prerelease', () => {
   );
 
   const refused = run(['install', '--yes', '--dry-run', '--project', proj]);
-  assert.notStrictEqual(refused.status, 0, 'prerelease install must be refused');
+  assert.strictEqual(refused.status, 4,
+    `prerelease install must be refused with the documented code 4:\n${refused.stderr}`);
   assert.match(refused.stderr, /prerelease/i);
 
   const allowed = run(['install', '--yes', '--dry-run', '--project', proj, '--allow-prerelease']);
@@ -50,7 +51,7 @@ test('repo tree install behavior matches its own VERSION prerelease state', () =
     { encoding: 'utf8' }
   );
   if (version.includes('-')) {
-    assert.notStrictEqual(r.status, 0, 'prerelease tree must refuse plain install');
+    assert.strictEqual(r.status, 4, `prerelease tree must refuse plain install with 4:\n${r.stderr}`);
     assert.match(r.stderr, /prerelease/i);
   } else {
     assert.strictEqual(r.status, 0, r.stderr);

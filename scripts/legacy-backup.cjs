@@ -49,6 +49,13 @@ function fail(msg, code = 1) {
   process.stderr.write(`legacy-backup: ${msg}\n`);
   process.exit(code);
 }
+// 마지막 그물. flushPendingActions()는 fail() 안에서만 도는데, 네이티브 예외(EISDIR/ENOENT/
+// EACCES...)는 fail()을 거치지 않고 프로세스를 끝낸다 — 그러면 exit 1(계약은 2)에 stdout은
+// 비어 있고, 원본을 옮겨둔 ~/.crew-legacy-rollback-XXXXXX 위치가 어디에도 안 나온다. 홈을
+// 이미 교체한 뒤라면 그게 사용자가 원본을 되찾을 유일한 단서다. 개별 던지는 지점을 하나씩
+// 막는 것으로는 "다음에 추가될 던지는 지점"을 못 막으므로, 여기서 계열 전체를 봉쇄한다.
+process.on('uncaughtException', (e) => fail(`unexpected error: ${(e && e.message) || e}`, 2));
+
 function sha256(buf) { return 'sha256:' + crypto.createHash('sha256').update(buf).digest('hex'); }
 function exists(p) { try { fs.lstatSync(p); return true; } catch { return false; } }
 function readJson(p) { return JSON.parse(fs.readFileSync(p, 'utf8')); }
@@ -78,7 +85,10 @@ function walkFiles(abs, rel, out) {
   }
 }
 
-function collectTargets(home) {
+// undetermined[]: 판정할 수 없었던 항목을 삼키지 않고 호출자에게 돌려준다. detect는
+// UNDETERMINED로 보고하고(항상 exit 0), backup은 매니페스트에서 빠진다는 사실을 경고로
+// 드러낸다 — 조용한 누락이 가장 나쁜 결과다.
+function collectTargets(home, undetermined = []) {
   const targets = [];
   const dir = (rel) => { if (exists(path.join(home, rel))) targets.push({ rel, kind: 'dir' }); };
   const file = (rel) => { if (exists(path.join(home, rel))) targets.push({ rel, kind: 'file' }); };
@@ -89,7 +99,13 @@ function collectTargets(home) {
   if (exists(skillsRoot)) {
     for (const e of fs.readdirSync(skillsRoot).sort()) {
       const d = path.join(skillsRoot, e);
-      if (fs.statSync(d).isDirectory() && SKILL_MARKERS.some((m) => exists(path.join(d, m)))) {
+      // statSync는 심볼릭 링크를 따라간다 — 사용자가 나중에 옮겨버린 저장소를 가리키는
+      // dangling symlink 스킬은 완전히 평범한 상태인데, 여기서 던지면 "항상 exit 0"인
+      // detect가 raw 스택으로 죽는다 (Task 9 Step 1이 그 종료 코드로 파괴 단계 진입을 정한다).
+      let isDir;
+      try { isDir = fs.statSync(d).isDirectory(); }
+      catch (err) { undetermined.push(`.claude/skills/${e} (${err.code || err.message})`); continue; }
+      if (isDir && SKILL_MARKERS.some((m) => exists(path.join(d, m)))) {
         targets.push({ rel: `.claude/skills/${e}`, kind: 'dir' });
       }
     }
@@ -108,15 +124,34 @@ function findMarkerRange(lines) {
   return { start, end };
 }
 
-function extractFragment(home) {
+// opts.tolerant: extractHookGroup과 같은 규약이다. ~/CLAUDE.md가 디렉터리이거나 읽을 수
+// 없으면 detect는 { present:false, readError } 를 받아 UNDETERMINED로 보고하고 exit 0을
+// 지킨다. backup은 1인자 호출로 loud fail(2) — 읽지 못한 파일을 두고 claudeMd.present:false
+// 매니페스트를 쓰면 restore가 "백업에 fragment 없음"으로 알고 조용히 건너뛰는 거짓 백업이 된다.
+function extractFragment(home, opts = {}) {
   const p = path.join(home, 'CLAUDE.md');
   if (!exists(p)) return { present: false };
-  const lines = fs.readFileSync(p, 'utf8').split('\n');
+  let text;
+  try { text = fs.readFileSync(p, 'utf8'); }
+  catch (err) {
+    if (opts.tolerant) return { present: false, readError: err.message };
+    fail(`~/CLAUDE.md could not be read: ${err.message}`, 2);
+  }
+  const lines = text.split('\n');
   const { start: s, end: e } = findMarkerRange(lines);
   if (s === -1 || e === -1 || e < s) return { present: false };
   const fragment = lines.slice(s, e + 1).join('\n') + '\n';
   return { present: true, startLine: s + 1, endLine: e + 1, fragment,
     fragmentSha256: sha256(Buffer.from(fragment)) };
+}
+
+// ship-guard 훅 그룹인지 판정하는 단일 술어. extractHookGroup(backup)과
+// restoreSettings(restore)가 반드시 같은 판정을 써야 한다 — legacySignals·findMarkerRange를
+// 공유하는 것과 같은 이유다. 갈라지면 restore가 이미 있는 그룹을 못 알아보고 중복 훅 그룹을
+// 덧붙인다.
+function hasShipGuardGroup(g) {
+  return Array.isArray(g && g.hooks) &&
+    g.hooks.some((h) => String((h && h.command) || '').includes(SHIP_GUARD));
 }
 
 // opts.tolerant: when the file exists but is not valid JSON, return a
@@ -137,9 +172,7 @@ function extractHookGroup(home, opts = {}) {
     fail(`~/.claude/settings.json is not valid JSON: ${err.message}`, 2);
   }
   const pre = parsed && parsed.hooks && parsed.hooks.PreToolUse;
-  const groups = Array.isArray(pre) ? pre.filter((g) =>
-    Array.isArray(g && g.hooks) &&
-    g.hooks.some((h) => String((h && h.command) || '').includes(SHIP_GUARD))) : [];
+  const groups = Array.isArray(pre) ? pre.filter(hasShipGuardGroup) : [];
   if (groups.length > 1) fail(`unexpected: ${groups.length} ship-guard hook groups in settings.json`, 2);
   return { present: true, sha256: sha256(raw), group: groups[0] || null };
 }
@@ -161,9 +194,12 @@ function backup(opts) {
   if (exists(dest) && fs.readdirSync(dest).length) {
     fail(`backup destination already exists and is not empty: ${dest}`, 2);
   }
-  const targets = collectTargets(home);
+  const undetermined = [];
+  const targets = collectTargets(home, undetermined);
   const frag = extractFragment(home);
   const hook = extractHookGroup(home);
+  // 판정하지 못한 항목은 매니페스트에서 빠진다 — 조용히 빠뜨리지 않고 밝힌다.
+  for (const u of undetermined) log(`WARNING: could not inspect ~/${u} — not included in this backup`);
   // 판정은 detect와 같은 술어를 쓴다. stock settings.json 하나만 있는 홈을 "백업했다"고
   // 말하면 그게 가장 위험한 거짓 안심이다.
   if (!legacySignals(home, targets, frag, hook).count) {
@@ -240,6 +276,23 @@ function verifyArchive(from) {
     }
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
+  }
+  // CLAUDE.md.fragment와 settings.json.hookgroup은 archive.tar.gz **밖**에 있고
+  // manifest.files는 tar 내용만 담는다 — 위 루프는 이 둘을 절대 보지 않는다. 그 공백 때문에
+  // 둘 중 하나가 없거나 손상된 백업도 "verify OK"를 받았고, 그 직후 restore가 홈을 교체한
+  // 다음 그 파일을 읽다 죽었다. restore가 쓰는 모든 입력을 verify가 본다는 것이 이 명령의 뜻이다.
+  if (manifest.claudeMd && manifest.claudeMd.present) {
+    const fp = path.join(from, 'CLAUDE.md.fragment');
+    let buf = null;
+    try { buf = fs.readFileSync(fp); }
+    catch (err) { problems.push(`unusable side file: CLAUDE.md.fragment (${err.message})`); }
+    if (buf && manifest.claudeMd.fragmentSha256 && sha256(buf) !== manifest.claudeMd.fragmentSha256) {
+      problems.push('sha256 mismatch: CLAUDE.md.fragment');
+    }
+  }
+  if (manifest.settings && manifest.settings.hasHookGroup) {
+    try { readJson(path.join(from, 'settings.json.hookgroup')); }
+    catch (err) { problems.push(`unusable side file: settings.json.hookgroup (${err.message})`); }
   }
   return { manifest, problems };
 }
@@ -342,9 +395,7 @@ function restoreSettings(home, tmp, from, manifest, actions, dryRun) {
   }
   parsed.hooks = parsed.hooks || {};
   parsed.hooks.PreToolUse = parsed.hooks.PreToolUse || [];
-  const present = parsed.hooks.PreToolUse.some((g) =>
-    Array.isArray(g && g.hooks) &&
-    g.hooks.some((h) => String((h && h.command) || '').includes(SHIP_GUARD)));
+  const present = parsed.hooks.PreToolUse.some(hasShipGuardGroup);
   if (present) { actions.push('settings.json: ship-guard group already present — no-op'); return; }
   const group = readJson(path.join(from, 'settings.json.hookgroup'));
   parsed.hooks.PreToolUse.push(group);
@@ -378,7 +429,11 @@ function assertRestoreHome(home, manifest, allowForeignHome) {
 
 // 안전 계약 3: rename 후 복사, 실패 시 전량 롤백. 어떤 대상도 선삭제하지 않는다.
 function applyRestore(home, tmp, restoreOrder, actions) {
-  const rollback = fs.mkdtempSync(path.join(home, '.crew-legacy-rollback-'));
+  // 롤백 디렉터리는 첫 '교체'가 실제로 일어날 때 만든다. 미리 만들면 교체 대상이 하나도 없는
+  // restore도 실제 $HOME에 빈 ~/.crew-legacy-rollback-XXXXXX를 남기고 "replaced targets
+  // kept..."라는 거짓 안내까지 찍었다 — 반복 실행하면 홈에 계속 쌓인다.
+  let rollback = null;
+  const ensureRollback = () => (rollback = rollback || fs.mkdtempSync(path.join(home, '.crew-legacy-rollback-')));
   const moved = [];
   const created = [];
   // dst -> actions[] 안에서 그 대상의 overwrite:/create: 줄 인덱스. 복사가 실제로 끝난 대상만
@@ -390,7 +445,7 @@ function applyRestore(home, tmp, restoreOrder, actions) {
       const dst = path.join(home, rel);
       const wasPresent = exists(dst);
       if (wasPresent) {
-        const saved = path.join(rollback, rel);
+        const saved = path.join(ensureRollback(), rel);
         fs.mkdirSync(path.dirname(saved), { recursive: true });
         fs.renameSync(dst, saved);                 // $HOME 내부 — cross-device 아님
         moved.push({ dst, saved });
@@ -433,16 +488,21 @@ function applyRestore(home, tmp, restoreOrder, actions) {
     if (unrestored.length || notCleaned.length) {
       // 계약 3의 보장은 무조건이므로, 전부 되돌리지 못했을 땐 최소한 롤백 디렉터리 경로와
       // 아직 못 되돌린 항목을 알려야 한다 — 사용자가 직접 복구할 수 있게.
-      fail(`restore failed (${err.message}), and the automatic rollback could not fully complete. ` +
-        `Your original files are preserved at ${rollback} — do not delete it.` +
+      fail(`restore failed (${err.message}), and the automatic rollback could not fully complete.` +
+        (rollback ? ` Your original files are preserved at ${rollback} — do not delete it.` : '') +
         (unrestored.length ? ` Not yet restored from there: ${unrestored.join(', ')}.` : '') +
         (notCleaned.length ? ` Not yet cleaned up: ${notCleaned.join(', ')}.` : '') +
         ` Restore by hand, then investigate before retrying.`, 2);
     }
-    try { fs.rmSync(rollback, { recursive: true, force: true }); } catch { /* 비어 있음 — 남아도 무해 */ }
+    if (rollback) {
+      try { fs.rmSync(rollback, { recursive: true, force: true }); } catch { /* 비어 있음 — 남아도 무해 */ }
+    }
     fail(`restore failed (${err.message}) — rolled back, home is unchanged`, 2);
   }
-  actions.push(`replaced targets kept for rollback at ~/${path.basename(rollback)} (delete when satisfied)`);
+  // 교체가 하나도 없었으면 보관할 원본도 없다 — 안내를 찍지 않는다.
+  if (rollback) {
+    actions.push(`replaced targets kept for rollback at ~/${path.basename(rollback)} (delete when satisfied)`);
+  }
 }
 
 function restore(opts) {
@@ -472,6 +532,23 @@ function restore(opts) {
     if (missing.length) {
       fail(`archive is missing restore targets: ${missing.join(', ')} — nothing was changed`, 2);
     }
+    // 안전 계약 2는 restoreOrder만이 아니라 **복구가 읽을 모든 입력**에 걸린다. 이 두 파일은
+    // tar 밖에 있어서 위 루프가 보지 못한다 — 여기서 안 막으면 restoreClaudeMd/restoreSettings의
+    // readFileSync가 홈을 이미 교체한 뒤에 던진다. (verifyArchive도 같은 검사를 하므로 실전에선
+    // 그쪽이 먼저 잡는다. 계약이 걸린 지점 자체에 검사를 두는 것이 이 루프의 목적이다 —
+    // 검증 단계를 건너뛰거나 순서가 바뀌어도 쓰기 전에 멈춘다.)
+    const unusable = [];
+    if (manifest.claudeMd && manifest.claudeMd.present) {
+      try { fs.readFileSync(path.join(opts.from, 'CLAUDE.md.fragment'), 'utf8'); }
+      catch (err) { unusable.push(`CLAUDE.md.fragment (${err.message})`); }
+    }
+    if (manifest.settings && manifest.settings.hasHookGroup) {
+      try { readJson(path.join(opts.from, 'settings.json.hookgroup')); }
+      catch (err) { unusable.push(`settings.json.hookgroup (${err.message})`); }
+    }
+    if (unusable.length) {
+      fail(`backup is missing restore inputs: ${unusable.join(', ')} — nothing was changed`, 2);
+    }
     if (opts.dryRun) {
       // dry-run에서는 applyRestore()가 아예 실행되지 않으므로 여기서 "예정된" 줄을 미리 찍는다 —
       // 예측이라고 [dry-run] 접두어가 이미 붙어 있으므로 미리 나열해도 진실과 어긋나지 않는다.
@@ -498,13 +575,19 @@ function restore(opts) {
 // Task 9 런북이 파괴적 단계로 갈지 말지를 이 출력 하나로 결정한다.
 function detect() {
   const home = os.homedir();
-  const targets = collectTargets(home);
-  const frag = extractFragment(home);
+  const undetermined = [];
+  const targets = collectTargets(home, undetermined);
+  const frag = extractFragment(home, { tolerant: true });
   const hook = extractHookGroup(home, { tolerant: true });
   const { owned, count } = legacySignals(home, targets, frag, hook);
   log(`home: ${home}`);
   for (const t of owned) log(`  owned  ${t.kind === 'dir' ? 'dir ' : 'file'} ~/${t.rel}`);
-  log(`  CLAUDE.md routing marker: ${frag.present ? `lines ${frag.startLine}-${frag.endLine}` : 'absent'}`);
+  for (const u of undetermined) log(`  UNDETERMINED  ~/${u}`);
+  if (frag.readError) {
+    log(`  CLAUDE.md routing marker: UNDETERMINED (unreadable: ${frag.readError})`);
+  } else {
+    log(`  CLAUDE.md routing marker: ${frag.present ? `lines ${frag.startLine}-${frag.endLine}` : 'absent'}`);
+  }
   if (hook.parseError) {
     log('  settings.json ship-guard group: UNDETERMINED (not valid JSON)');
   } else {

@@ -18,7 +18,8 @@ test('installer refuses $HOME as project root', () => {
   });
 
   const refused = run(['install', '--yes', '--dry-run', '--project', fakeHome]);
-  assert.notStrictEqual(refused.status, 0, 'installing into $HOME must be refused');
+  assert.strictEqual(refused.status, 4,
+    `installing into $HOME must be refused with the documented code 4:\n${refused.stderr}`);
   assert.match(refused.stderr, /\$HOME/);
 
   const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-proj-'));
