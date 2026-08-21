@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const cp = require('child_process');
 const { mkFakeHome, runBackupTool, CAPABILITIES } = require('./helpers/fake-home.cjs');
+const { tempDir } = require('./helpers/repo.cjs');
 
 // chmod 555는 root에서 무효다 — root로 도는 CI 컨테이너에서 아래 두 파괴-경로 테스트는
 // 조용한 vacuous pass가 아니라 실제 실패로 게이트를 막는다. 권한 거부를 실제로 일으킬 수
@@ -54,7 +55,7 @@ test('backup refuses a non-empty destination and an empty home', () => {
   const r = runBackupTool(['backup', '--dest', dest], { HOME: home });
   assert.strictEqual(r.status, 2, r.stderr);
 
-  const emptyHome = fs.mkdtempSync(path.join(require('os').tmpdir(), 'crew-empty-'));
+  const emptyHome = tempDir('crew-empty-');
   const r2 = runBackupTool(['backup', '--dest', path.join(emptyHome, 'b')], { HOME: emptyHome });
   assert.strictEqual(r2.status, 2, r2.stderr);
   assert.match(r2.stderr, /nothing to back up/i);
@@ -62,7 +63,7 @@ test('backup refuses a non-empty destination and an empty home', () => {
 
 test('detect reports the inventory of any home and never fails on an absent install', () => {
   // 레거시가 설치된 적 없는 PC — Task 9가 여기서 막히면 안 된다.
-  const emptyHome = fs.mkdtempSync(path.join(require('os').tmpdir(), 'crew-empty-'));
+  const emptyHome = tempDir('crew-empty-');
   const empty = runBackupTool(['detect'], { HOME: emptyHome });
   assert.strictEqual(empty.status, 0, empty.stderr);
   assert.match(empty.stdout, /^legacy targets: 0$/m);
@@ -114,7 +115,7 @@ test('default backup directory uses the local date, not the UTC date', () => {
 test('detect tolerates a corrupted settings.json (exit 0, UNDETERMINED) while backup still refuses it', () => {
   // 손상된 settings.json은 detect가 살아남아야 하는 바로 그 미지 상태다 — 반쯤 고친
   // 설정 파일을 가진 머신에서도 Task 9의 런북은 detect의 exit code로 진행 여부를 정한다.
-  const home = fs.mkdtempSync(path.join(require('os').tmpdir(), 'crew-corrupt-'));
+  const home = tempDir('crew-corrupt-');
   fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
   fs.writeFileSync(path.join(home, '.claude/settings.json'), '{ this is not valid json');
 

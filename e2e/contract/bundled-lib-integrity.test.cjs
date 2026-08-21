@@ -3,13 +3,12 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const cp = require('child_process');
-const { copyRepo } = require('./helpers/repo.cjs');
+const { copyRepo, tempDir } = require('./helpers/repo.cjs');
 
 function install(pkg, extra = []) {
-  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-proj-'));
+  const project = tempDir('crew-proj-');
   return cp.spawnSync(process.execPath, [
     path.join(pkg, 'bin', 'triple-crown.cjs'), 'install',
     '--yes', '--dry-run', '--project', project, '--allow-prerelease', ...extra,

@@ -1,9 +1,9 @@
 'use strict';
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const cp = require('child_process');
+const { tempDir } = require('./repo.cjs');
 
 const ROUTING_BLOCK = [
   '<!-- triple-crown:managed-routing:start -->',
@@ -23,7 +23,7 @@ const HOOK_GROUP = {
 const CAPABILITIES = ['triple-gstack', 'triple-superpowers', 'triple-crown-guide'];
 
 function mkFakeHome() {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-fake-home-'));
+  const home = tempDir('crew-fake-home-');
   const w = (rel, content) => {
     const p = path.join(home, rel);
     fs.mkdirSync(path.dirname(p), { recursive: true });
