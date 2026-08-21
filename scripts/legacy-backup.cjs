@@ -154,17 +154,27 @@ function hasShipGuardGroup(g) {
     g.hooks.some((h) => String((h && h.command) || '').includes(SHIP_GUARD));
 }
 
-// opts.tolerant: when the file exists but is not valid JSON, return a
-// { present: true, group: null, parseError: true } result instead of calling
-// fail() and exiting. Only `detect` passes this — a judgment tool must never
+// opts.tolerant: when the file exists but cannot be read or is not valid JSON,
+// return a { present: true, group: null, readError|parseError } result instead of
+// calling fail() and exiting. Only `detect` passes this — a judgment tool must never
 // die on a hand-edited settings.json (design doc §1.2/§1.3, review round 1).
 // `backup` calls this with no opts and keeps the loud fail(): a manifest that
-// silently records hasHookGroup:false for a file it could not parse would be
+// silently records hasHookGroup:false for a file it could not read or parse would be
 // a false backup, and `restore` (Task 4-6) trusts that manifest.
+//
+// 읽기도 파싱과 같은 규약으로 감싼다. ~/.claude/settings.json 이 디렉터리이거나(EISDIR)
+// 권한이 없으면(EACCES) 감싸지 않은 readFileSync 가 던져서 detect 가 exit 2 하고
+// `legacy targets:` 줄 자체가 안 나온다 — extractFragment 는 이미 감싸져 있었는데
+// 대칭 경로인 여기만 노출돼 있었다.
 function extractHookGroup(home, opts = {}) {
   const p = path.join(home, '.claude', 'settings.json');
   if (!exists(p)) return { present: false };
-  const raw = fs.readFileSync(p);
+  let raw;
+  try { raw = fs.readFileSync(p); }
+  catch (err) {
+    if (opts.tolerant) return { present: true, group: null, readError: err.message };
+    fail(`~/.claude/settings.json could not be read: ${err.message}`, 2);
+  }
   let parsed;
   try { parsed = JSON.parse(raw.toString('utf8')); }
   catch (err) {
@@ -453,7 +463,12 @@ function applyRestore(home, tmp, restoreOrder, actions) {
         created.push(dst);                          // 시작 상태에 없던 대상 — 실패 시 지워야 홈이 그대로다
       }
       fs.mkdirSync(path.dirname(dst), { recursive: true });
-      fs.cpSync(path.join(tmp, rel), dst, { recursive: true });
+      // verbatimSymlinks 기본값(false)은 상대 링크를 **원본 기준 절대경로**로 다시 쓴다.
+      // 여기서 원본은 finally 에서 지워지는 임시 추출 디렉터리이므로, 그대로 두면 복원된
+      // 링크가 곧바로 없는 경로를 가리킨다 — verify 는 아카이브만 보므로 "verify OK" 뒤에
+      // 조용히 깨진다. walkFiles 가 링크를 kind:'symlink' 로 충실히 기록하는 이상,
+      // 복원도 문자 그대로여야 한다.
+      fs.cpSync(path.join(tmp, rel), dst, { recursive: true, verbatimSymlinks: true });
       // 이 대상은 복사가 실제로 끝난 뒤에만 로그한다 (리뷰 지적 — 미리 찍어두지 않는다).
       actions.push(`${wasPresent ? 'overwrite' : 'create'}: ~/${rel}`);
       actionIndexByDst.set(dst, actions.length - 1);
@@ -588,11 +603,20 @@ function detect() {
   } else {
     log(`  CLAUDE.md routing marker: ${frag.present ? `lines ${frag.startLine}-${frag.endLine}` : 'absent'}`);
   }
-  if (hook.parseError) {
+  if (hook.readError) {
+    log(`  settings.json ship-guard group: UNDETERMINED (unreadable: ${hook.readError})`);
+  } else if (hook.parseError) {
     log('  settings.json ship-guard group: UNDETERMINED (not valid JSON)');
   } else {
     log(`  settings.json ship-guard group: ${hook.present && hook.group ? 'present' : 'absent'}`);
   }
+  // Task 9 의 "제거할 것 없음" 분기는 `legacy targets: 0` 하나만 봐서는 안 된다 —
+  // UNDETERMINED 는 "없다"가 아니라 "모른다"다. 판정 불가 항목만 있는 홈에서도 count 는
+  // 0 이므로, 그 분기가 조용히 통과해 실제로 남아 있는 레거시를 놓친다. 단어를 grep 하는
+  // 것으로는 부족하다 (경로 이름에 들어 있으면 거짓 양성). 세어서 한 줄로 낸다.
+  const undeterminedCount = undetermined.length +
+    (frag.readError ? 1 : 0) + (hook.readError || hook.parseError ? 1 : 0);
+  log(`undetermined: ${undeterminedCount}`);
   log(`legacy targets: ${count}`);
 }
 

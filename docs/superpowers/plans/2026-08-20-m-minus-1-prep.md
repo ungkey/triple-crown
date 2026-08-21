@@ -1469,13 +1469,23 @@ echo "repo=$REPO_ROOT  home=$HOME  gsd-tools=${GSD_TOOLS:-<not found>}"
 - [ ] **Step 1: 환경 감지 + 다른 프로젝트 영향 (§2.1.1)**
 
 ```bash
-$BACKUP detect
+DETECT="$($BACKUP detect)"; echo "$DETECT"
 find "$HOME" -name STATE.md -path '*/.planning/*' -not -path '*/node_modules/*' 2>/dev/null
+
+UNDET=$(printf '%s\n' "$DETECT" | sed -n 's/^undetermined: //p')
+TARGETS=$(printf '%s\n' "$DETECT" | sed -n 's/^legacy targets: //p')
+echo "undetermined=$UNDET  targets=$TARGETS"
 ```
 
-**분기 — `legacy targets: 0`이면 여기서 Task 9 종료.** 이 머신에는 제거할 v0.6.x 전역 설치가 없다. Step 2~5를 건너뛰고 M-1 완료로 판정한다. *백업 없이 파괴를 진행하는 것이 아니라, 파괴할 대상이 없어 파괴 단계 자체가 없는 것*이다. `$BACKUP detect` 출력을 M-1 증적으로 남긴다.
+**분기는 두 값을 함께 본다.** `detect`는 판정하지 못한 항목을 `UNDETERMINED`로 보고하고 그것을 `legacy targets`에 **세지 않는다** — 세면 "모른다"가 "있다"로 둔갑하기 때문이다. 그래서 `legacy targets: 0` 하나만 보면 *판정 불가 항목만 있는 홈*이 "제거할 것 없음"으로 조용히 통과한다.
 
-`legacy targets: N` (N ≥ 1)이면 계속. `find` 결과가 비어 있지 않으면 각 `.planning/STATE.md`를 열어 진행 중 phase를 확인한다. **하나라도 진행 중이면 제거 보류** — 해당 프로젝트를 phase 경계까지 정리한 뒤 재개.
+| `undetermined` | `legacy targets` | 판정 |
+|---|---|---|
+| `0` | `0` | **Task 9 종료.** 제거할 v0.6.x 전역 설치가 없다. Step 2~5를 건너뛰고 M-1 완료로 판정한다. *백업 없이 파괴를 진행하는 것이 아니라, 파괴할 대상이 없어 파괴 단계 자체가 없는 것*이다. `detect` 출력을 M-1 증적으로 남긴다. |
+| `0` | `N ≥ 1` | Step 2로 계속. |
+| `≥ 1` | 무관 | **정지.** 판정 불가 항목을 먼저 해소한다 — `UNDETERMINED` 줄이 가리키는 경로의 권한·종류(디렉터리인지, 깨진 심볼릭 링크인지)를 사람이 확인해 읽을 수 있게 만든 뒤 `detect`를 다시 돌린다. 해소 전에는 백업도 제거도 하지 않는다: 백업에 안 들어간 것은 복원되지 않는다. |
+
+계속하는 경우, `find` 결과가 비어 있지 않으면 각 `.planning/STATE.md`를 열어 진행 중 phase를 확인한다. **하나라도 진행 중이면 제거 보류** — 해당 프로젝트를 phase 경계까지 정리한 뒤 재개.
 
 - [ ] **Step 2: 백업 + 검증**
 
@@ -1571,7 +1581,7 @@ ls -A "$HOME/.gsd/capabilities/" 2>/dev/null || echo "OK absent: ~/.gsd/capabili
 $BACKUP detect
 ```
 
-Expected: `FAIL` 줄이 하나도 없고, `.gsd/capabilities/`가 비어 있거나 없고, 마지막 `detect`가 `legacy targets: 0`. `~/CLAUDE.md`의 마커 밖 사용자 작성분과 `settings.json`의 다른 훅·설정이 보존됐는지는 눈으로 확인한다.
+Expected: `FAIL` 줄이 하나도 없고, `.gsd/capabilities/`가 비어 있거나 없고, 마지막 `detect`가 `undetermined: 0` **그리고** `legacy targets: 0`. `~/CLAUDE.md`의 마커 밖 사용자 작성분과 `settings.json`의 다른 훅·설정이 보존됐는지는 눈으로 확인한다.
 
 - [ ] **Step 5: 복구 리허설 (§2.4 — 제거 직후 1회)**
 

@@ -759,3 +759,83 @@ test('a restore that replaces nothing leaves no rollback directory and claims no
   assert.doesNotMatch(r.stdout, /replaced targets kept/,
     `nothing was replaced — the rollback notice must not be printed:\n${r.stdout}`);
 });
+
+test('detect tolerates an unreadable ~/.claude/settings.json (exit 0, UNDETERMINED) while backup refuses it', () => {
+  // extractFragment 는 readFileSync 를 tolerant 로 감쌌지만 extractHookGroup 은 JSON.parse 만
+  // 감싸고 읽기는 노출돼 있었다. settings.json 이 디렉터리이거나 권한이 없으면 detect 가
+  // EISDIR/EACCES 로 exit 2 하고 `legacy targets:` 줄 자체가 안 나온다 — Task 9 런북은
+  // `set -euo pipefail` 이라 첫 명령에서 멈춘다. 판정 도구는 절대 죽으면 안 된다.
+  const home = mkFakeHome();
+  fs.rmSync(path.join(home, '.claude/settings.json'));
+  fs.mkdirSync(path.join(home, '.claude/settings.json'));
+
+  const d = runBackupTool(['detect'], { HOME: home });
+  assert.strictEqual(d.status, 0,
+    `detect must never fail on an unreadable settings.json:\nstdout:\n${d.stdout}\nstderr:\n${d.stderr}`);
+  assert.match(d.stdout, /settings\.json ship-guard group: UNDETERMINED/);
+  assert.match(d.stdout, /^legacy targets: \d+$/m, 'the verdict line must still be printed');
+
+  // backup 은 같은 규약으로 시끄럽게 거부한다 — 읽지 못한 파일을 hasHookGroup:false 로
+  // 기록하면 restore 가 훅 그룹을 되살리지 않는 거짓 백업이 된다.
+  const b = runBackupTool(['backup', '--dest', path.join(home, 'b')], { HOME: home });
+  assert.strictEqual(b.status, 2, `backup must refuse loudly:\nstderr:\n${b.stderr}`);
+  assert.match(b.stderr, /settings\.json/);
+});
+
+test('detect tolerates a permission-denied ~/.claude/settings.json (exit 0, UNDETERMINED)', (t) => {
+  if (IS_ROOT) return t.skip(ROOT_SKIP);
+  const home = mkFakeHome();
+  const p = path.join(home, '.claude/settings.json');
+  fs.chmodSync(p, 0o000);
+  t.after(() => { try { fs.chmodSync(p, 0o644); } catch { /* best effort */ } });
+
+  const d = runBackupTool(['detect'], { HOME: home });
+  assert.strictEqual(d.status, 0,
+    `detect must never fail on a permission-denied settings.json:\nstdout:\n${d.stdout}\nstderr:\n${d.stderr}`);
+  assert.match(d.stdout, /settings\.json ship-guard group: UNDETERMINED/);
+});
+
+test('detect reports an undetermined count that Task 9 can branch on', () => {
+  // `legacy targets: 0` 하나만 보고 "제거할 것 없음"으로 판정하면, 판정 불가 항목만 있는
+  // 홈에서 그 분기가 조용히 통과한다. UNDETERMINED 는 "없다"가 아니라 "모른다"이므로
+  // 런북이 기계적으로 구분할 수 있어야 한다. 단어를 grep 하는 것으로는 부족하다 —
+  // 경로 이름에 UNDETERMINED 가 들어 있으면 거짓 양성이 난다.
+  const clean = mkFakeHome();
+  const ok = runBackupTool(['detect'], { HOME: clean });
+  assert.strictEqual(ok.status, 0, ok.stderr);
+  assert.match(ok.stdout, /^undetermined: 0$/m, `a fully-inspectable home must report 0:\n${ok.stdout}`);
+
+  const murky = mkFakeHome();
+  fs.rmSync(path.join(murky, 'CLAUDE.md'));
+  fs.mkdirSync(path.join(murky, 'CLAUDE.md'));
+  fs.symlinkSync(path.join(murky, 'gone', 'skill'), path.join(murky, '.claude/skills/ghost'));
+  const d = runBackupTool(['detect'], { HOME: murky });
+  assert.strictEqual(d.status, 0, d.stderr);
+  const n = Number(d.stdout.match(/^undetermined: (\d+)$/m)[1]);
+  assert.strictEqual(n, 2, `both the dangling skill and the unreadable CLAUDE.md must be counted:\n${d.stdout}`);
+});
+
+test('restore preserves a relative symlink instead of rewriting it to the extraction path', () => {
+  // fs.cpSync 의 verbatimSymlinks 기본값은 false — 상대 링크를 **원본 기준 절대경로**로
+  // 다시 쓴다. 복원 원본은 restore 가 finally 에서 지우는 임시 추출 디렉터리이므로,
+  // 복원된 링크는 곧바로 없는 경로를 가리킨다. backup 쪽(walkFiles)은 심볼릭 링크를
+  // kind:'symlink' + 링크 대상 해시로 충실히 기록하고 verify 도 통과하므로, 손상은
+  // "verify OK" 뒤에 조용히 일어난다.
+  const home = mkFakeHome();
+  const linkRel = '.triple-crown/link-to-version';
+  fs.symlinkSync('VERSION', path.join(home, linkRel));
+
+  const dest = path.join(home, 'backup');
+  assert.strictEqual(runBackupTool(['backup', '--dest', dest], { HOME: home }).status, 0);
+  assert.strictEqual(runBackupTool(['verify', '--from', dest], { HOME: home }).status, 0);
+
+  fs.rmSync(path.join(home, '.triple-crown'), { recursive: true, force: true });
+  const r = runBackupTool(['restore', '--from', dest], { HOME: home });
+  assert.strictEqual(r.status, 0, r.stderr);
+
+  const restored = path.join(home, linkRel);
+  assert.strictEqual(fs.readlinkSync(restored), 'VERSION',
+    'a relative symlink must come back relative — an absolute rewrite points into the deleted temp dir');
+  assert.strictEqual(fs.readFileSync(restored, 'utf8'), '0.6.3\n',
+    'the restored link must resolve to the restored target');
+});
