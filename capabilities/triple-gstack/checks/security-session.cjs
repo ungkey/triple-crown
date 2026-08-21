@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 const fs=require('fs'),path=require('path');
-const {captureSnapshot,compareSnapshots,sha256}=require('./repo-state-lib.cjs');
+const {captureSnapshot,compareSnapshots,sha256}=require('./lib/repo-state-lib.cjs');
 function sd(p){const d=path.join(path.resolve(p),'.triple-crown');fs.mkdirSync(d,{recursive:true});return d;}
 function pre(p){return path.join(sd(p),'gstack-cso-pre.json');}
 try{

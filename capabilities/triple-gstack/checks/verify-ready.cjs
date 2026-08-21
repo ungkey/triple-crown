@@ -3,11 +3,11 @@
 
 const fs = require('fs');
 const path = require('path');
-const { captureSnapshot } = require('./repo-state-lib.cjs');
+const { captureSnapshot } = require('./lib/repo-state-lib.cjs');
 const {
   loadStore,
   latestPostReviewVerification,
-} = require('./evidence-store.cjs');
+} = require('./lib/evidence-store.cjs');
 
 function fail(code, message) {
   console.error(`Triple Crown verify gate: ${message}`);

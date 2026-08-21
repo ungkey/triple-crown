@@ -36,7 +36,7 @@ Resolve `TC_GSTACK_CAP` exactly as the code-review wrapper does, then:
 
 ```bash
 PHASE_TOKEN=$(printf '%s' "$ARGUMENTS" | awk '{print $1}')
-PHASE_DIR=$(node "$TC_GSTACK_CAP/checks/resolve-phase-dir.cjs" "$PHASE_TOKEN")
+PHASE_DIR=$(node "$TC_GSTACK_CAP/checks/lib/resolve-phase-dir.cjs" "$PHASE_TOKEN")
 ```
 
 ## 2. Capture report-only PRE state

@@ -3,7 +3,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { sha256 } = require('./repo-state-lib.cjs');
+const { sha256 } = require('./lib/repo-state-lib.cjs');
 
 const TEST_START = '<!-- triple-crown:qa-tests:start -->';
 const TEST_END = '<!-- triple-crown:qa-tests:end -->';

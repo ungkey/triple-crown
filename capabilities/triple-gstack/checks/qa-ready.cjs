@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 const fs=require('fs'), path=require('path');
-const {captureSnapshot,sha256}=require('./repo-state-lib.cjs');
+const {captureSnapshot,sha256}=require('./lib/repo-state-lib.cjs');
 function fail(c,m){console.error(`Triple Crown QA gate: ${m}`);process.exit(c);}
 try{
   const phaseDir=path.resolve(process.argv[2]||''); if(!process.argv[2]) fail(2,'phase directory required');

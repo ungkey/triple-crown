@@ -53,7 +53,7 @@ Resolve it with:
 
 ```bash
 PHASE_TOKEN=${PHASE_NUMBER:-$(printf '%s' "$ARGUMENTS" | awk '{print $1}')}
-PHASE_DIR=$(node "$TC_GSTACK_CAP/checks/resolve-phase-dir.cjs" "$PHASE_TOKEN")
+PHASE_DIR=$(node "$TC_GSTACK_CAP/checks/lib/resolve-phase-dir.cjs" "$PHASE_TOKEN")
 ```
 
 If phase resolution fails, stop with `BLOCKED` rather than guessing.
@@ -165,7 +165,7 @@ Run every required command fresh. For each command:
 4. Record the result:
 
 ```bash
-node "$TC_GSTACK_CAP/checks/evidence-store.cjs" record "$PHASE_DIR" \
+node "$TC_GSTACK_CAP/checks/lib/evidence-store.cjs" record "$PHASE_DIR" \
   --kind post-review-verification \
   --producer triple-gstack-code-review \
   --command-file "$CMD_FILE" \

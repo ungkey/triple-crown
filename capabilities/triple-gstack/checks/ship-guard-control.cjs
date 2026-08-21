@@ -3,7 +3,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { findProjectRoot, execGit } = require('./repo-state-lib.cjs');
+const { findProjectRoot, execGit } = require('./lib/repo-state-lib.cjs');
 
 function tcDir(root) {
   const d = path.join(root, '.planning', '.triple-crown');

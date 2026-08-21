@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-const fs=require('fs'),path=require('path'); const {captureSnapshot}=require('./repo-state-lib.cjs');
+const fs=require('fs'),path=require('path'); const {captureSnapshot}=require('./lib/repo-state-lib.cjs');
 const R={info:0,low:1,medium:2,high:3,critical:4};
 function fail(c,m){console.error(`Triple Crown security ship gate: ${m}`);process.exit(c);}
 try{

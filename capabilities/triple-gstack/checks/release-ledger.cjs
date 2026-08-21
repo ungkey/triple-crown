@@ -4,7 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const cp = require('child_process');
-const { findProjectRoot, execGit } = require('./repo-state-lib.cjs');
+const { findProjectRoot, execGit } = require('./lib/repo-state-lib.cjs');
 
 function releasePath(phaseDir) {
   return path.join(path.resolve(phaseDir), 'RELEASE.json');

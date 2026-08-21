@@ -3,7 +3,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { captureSnapshot, compareSnapshots, sha256 } = require('./repo-state-lib.cjs');
+const { captureSnapshot, compareSnapshots, sha256 } = require('./lib/repo-state-lib.cjs');
 
 function stateDir(phaseDir) {
   const d = path.join(path.resolve(phaseDir), '.triple-crown');

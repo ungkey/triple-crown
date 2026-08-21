@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 const fs=require('fs'),path=require('path');
-const {findProjectRoot,tryGit}=require('./repo-state-lib.cjs');
+const {findProjectRoot,tryGit}=require('./lib/repo-state-lib.cjs');
 const RULES=[
 {level:'high',re:/\b(auth|authentication|authorization|oauth|oidc|jwt|session|password|passkey|mfa|2fa|rbac|permission|privilege)\b/i,label:'identity/access'},
 {level:'high',re:/\b(payment|billing|stripe|paypal|checkout|invoice|refund|wallet|crypto|blockchain|usdt|private key|seed phrase|signing key)\b/i,label:'money/keys'},
