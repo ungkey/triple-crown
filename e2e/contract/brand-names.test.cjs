@@ -21,6 +21,7 @@ const ALLOW = [
   'e2e/contract/legacy-module.test.cjs',
   'e2e/contract/helpers/fake-home.cjs',
   'e2e/contract/legacy-transition.test.cjs',
+  'e2e/contract/uninstall-legacy.test.cjs',
   'e2e/compatibility-baseline.json',
   'e2e/contract/brand-names.test.cjs',
   'docs/RENAME-MAP.md',
