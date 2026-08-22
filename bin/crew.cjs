@@ -351,13 +351,50 @@ function validateBundledManifests() {
   }
   return true;
 }
-function installCapabilities(root,runner,opts) {
+// 실패한 설치가 남긴 원장을 소스와 같은 세대로 되돌린다.
+//
+// tx.restore() 는 .crew 소스만 되돌리므로 그것만으로는 "원장은 신버전 · 소스는 구버전"인
+// 반쪽 상태가 남는다. 이전 설치본이 있었으면(hadPrevious) 되돌린 소스로 다시 등록하고,
+// 없었으면(fresh) 이번에 손댄 것을 전부 지운다.
+//
+// 이 함수는 던지지 않는다 — 원래 실패를 덮어쓰면 사용자가 진짜 원인을 못 본다.
+// 되돌리기에 실패하면 무엇을 손으로 해야 하는지 알린다.
+function rollbackCapabilities(root,runner,touched,hadPrevious,opts) {
+  if(!touched.length) return;
+  if(!runner) {
+    warn(`Install failed after touching: ${touched.join(', ')}. GSD CLI is unavailable, so the `+
+      'capability ledger could not be rolled back. Re-run `crew install` once GSD is reachable.');
+    return;
+  }
+  const stuck=[];
+  for(const id of [...touched].reverse()) {
+    const rem=gsdTry(runner,['capability','remove',id,'--scope','project'],root);
+    // "not installed"는 정상이다(설치 전에 죽은 id). 그 외의 비-0 은 원장이 그대로라는 뜻이다.
+    if(rem.code!==0 && !/not installed/i.test(rem.stderr||rem.stdout||'')) {
+      stuck.push(`${id} (remove: ${(rem.stderr||rem.stdout||'').trim()})`);
+      continue;
+    }
+    if(!hadPrevious) continue;
+    const re=gsdTry(runner,['capability','install',`./.crew/capabilities/${id}`,'--scope','project','--yes'],root);
+    if(re.code!==0) stuck.push(`${id} (reinstall: ${(re.stderr||re.stdout||'').trim()})`);
+  }
+  if(stuck.length) {
+    warn(`Rollback could not reinstate: ${stuck.join(', ')}. Run \`crew install\` again, or remove `+
+      'them with `gsd-tools capability remove <id> --scope project` and reinstall.');
+  } else {
+    log(hadPrevious
+      ? 'Rolled the capability ledger back to the previously installed generation.'
+      : 'Removed the partially installed capabilities left by the failed run.');
+  }
+}
+function installCapabilities(root,runner,opts,touched=[]) {
   let list=[];
   const before=gsdTry(runner,['capability','list','--scope','project'],root);
   if(before.code===0) list=parseCapabilityList(before.stdout);
   for(const id of CAPABILITIES) {
     const old=list.find(x=>x.id===id && x.scope==='project');
     log(old ? `Refreshing ${id}...` : `Installing ${id}...`);
+    touched.push(id);                       // 여기서부터 이 id 는 이번 실행의 책임이다
 
     // Always attempt removal first. This repairs a prior interrupted install even
     // when `capability list` cannot accurately surface the stale ledger entry.
@@ -634,8 +671,12 @@ async function install(root,opts) {
   }
 
   const tx=prepareStableSource(root);
+  // restore() 가 backup 을 dest 로 rename 하므로 이 값은 반드시 restore 전에 읽어야 한다.
+  // 뒤에 읽으면 항상 false 가 되고, 업그레이드 실패가 롤백 대신 "전부 제거"로 끝난다.
+  const hadPrevious=exists(tx.backup);
+  const touched=[];
   try {
-    const rows=installCapabilities(root,gsd,opts);
+    const rows=installCapabilities(root,gsd,opts,touched);
     const skills=installProjectSkills(root);
     if(opts.routing) installRouting(root);
     if(opts.shipGuard) installShipGuard(root,opts);
@@ -653,7 +694,8 @@ async function install(root,opts) {
     log('Next: restart/reload Claude Code if needed, then run /crew-gsd');
     log('Doctor: npx crew-harness doctor');
   } catch(err) {
-    tx.restore();
+    tx.restore();                                    // 소스를 먼저 되돌린다
+    rollbackCapabilities(root,gsd,touched,hadPrevious,opts);   // 그다음 원장을 맞춘다
     throw err;
   }
 }

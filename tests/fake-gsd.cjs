@@ -17,6 +17,15 @@ if(args[0]==='capability' && args[1]==='remove'){
 if(args[0]==='capability' && args[1]==='install'){
   const spec=args[2], src=path.resolve(cwd,spec);
   const m=JSON.parse(fs.readFileSync(path.join(src,'capability.json'),'utf8'));
+  // 테스트 전용 실패 주입. 롤백의 재설치까지 죽이면 "이전 세대로 되돌린다"는 계약 자체를
+  // 검증할 수 없으므로 **첫 시도에서만** 발화한다. 마커는 원장 옆에 둔다.
+  if(process.env.FAKE_GSD_FAIL_INSTALL===m.id){
+    const mark=path.join(cwd,'.fake-gsd-failed-once');
+    if(!fs.existsSync(mark)){
+      fs.writeFileSync(mark,m.id+'\n');
+      console.error(`fake-gsd: injected failure installing ${m.id}`); process.exit(1);
+    }
+  }
   if (m.role==='feature') {
     const rc=m.runtimeCompat || {};
     const concreteSupported=Array.isArray(rc.supported) ? rc.supported.filter(x=>x!=='*') : [];
