@@ -286,3 +286,129 @@ test('a failing capability remove is surfaced with the id that failed', () => {
   assert.strictEqual(res.failures.length, 1, res.failures.join('\n'));
   assert.match(res.failures[0], /triple-superpowers: ledger is locked/);
 });
+
+// --- 리뷰 라운드 1 수정 -------------------------------------------------------
+
+// F1: count 는 판정된 대상만 센다. undetermined 가 유일한 신호일 때도 "할 일 없음"을
+// 말하면 안 된다 — 그건 "모른다"를 "없다"로 읽는 것이다.
+test('a tree whose only legacy signal is undetermined never reports nothing to remove', () => {
+  const root = tempDir('crew-clean-');
+  // CLAUDE.md 를 디렉터리로 만들어 읽기 실패(EISDIR)를 유도한다 — 판정 불가지, 부재가 아니다.
+  fs.mkdirSync(path.join(root, 'CLAUDE.md'));
+  const r = runCli(['uninstall-legacy', '--project', root, '--yes']);
+  assert.strictEqual(r.status, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /UNDETERMINED/);
+  assert.doesNotMatch(r.stdout, /nothing to remove/i);
+});
+
+// F2: 같은 트리를 문자열로만 비교하면 symlink 로 도달한 홈을 다른 트리로 오판해
+// 두 번 계획하고 두 번 파괴한다. realpath 비교(sameRealPath)로 고쳤다 — 평범한
+// 동일 경로 케이스와 심볼릭 링크 케이스 둘 다 "정확히 한 번"을 단언한다.
+test('--global with --project pointing at $HOME removes it exactly once', () => {
+  const home = mkFakeHome();
+  const from = mkBackup(home);
+  const r = runCli(['uninstall-legacy', '--project', home, '--global', '--yes', '--from', from],
+    { HOME: home, USERPROFILE: home });
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  assert.ok(!fs.existsSync(path.join(home, '.triple-crown')));
+  assert.strictEqual((r.stdout.match(/remove \.triple-crown\b/g) || []).length, 1,
+    'vendor dir removal must be planned exactly once, not once per (mis-detected) scope');
+});
+
+test('--global with --project reaching $HOME through a symlink still removes it exactly once', () => {
+  const home = mkFakeHome();
+  const alias = path.join(tempDir('crew-alias-'), 'home-link');
+  try {
+    fs.symlinkSync(home, alias, 'dir');
+  } catch {
+    // 이 플랫폼에서 심볼릭 링크를 만들 수 없다 — 위 동일 경로 테스트만 이 사실을 커버한다.
+    return;
+  }
+  const from = mkBackup(alias);
+  const r = runCli(['uninstall-legacy', '--project', alias, '--global', '--yes', '--from', from],
+    { HOME: home, USERPROFILE: home });
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  assert.ok(!fs.existsSync(path.join(home, '.triple-crown')));
+  assert.strictEqual((r.stdout.match(/remove \.triple-crown\b/g) || []).length, 1,
+    'realpath-equal scopes (symlink and its target) must collapse to a single plan');
+});
+
+// F3: 전체 버퍼에 정규식을 돌리면 마커 밖의 빈 줄 뭉치(펜스 코드 블록 안쪽 포함)까지
+// 사용자 모르게 뭉개진다. 이제 접합부만 정규화하므로 손대지 않은 구간은 바이트 그대로다.
+test('CLAUDE.md content outside the marker pair survives byte-for-byte', () => {
+  const root = mkFakeHome();
+  const p = path.join(root, 'CLAUDE.md');
+  const before = fs.readFileSync(p, 'utf8');
+  // 마커 밖에 사용자가 쓴 3중 개행과, 빈 줄이 있는 펜스 코드 블록을 더한다.
+  const userTail = '\n\n\n```js\nfunction f() {\n\n  return 1;\n}\n```\n\n\ntrailer\n';
+  fs.writeFileSync(p, before + userTail);
+  const from = mkBackup(root);
+  const r = runCli(['uninstall-legacy', '--project', root, '--from', from, '--yes']);
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  const after = fs.readFileSync(p, 'utf8');
+  assert.ok(after.endsWith(userTail),
+    'content outside the marker pair must be byte-identical, including its blank-line runs and fenced code');
+  assert.ok(!after.includes('triple-crown:managed-routing'));
+});
+
+// F4: --dry-run 은 아무것도 쓰지 않는 미리보기여야 한다. runner 가 없다고 실패를
+// 보고하면 유일하게 안전한 미리보기 경로가 "실패로 끝나는 실행"이 되어 버린다.
+test('dry run with no GSD runner narrates capability removals without failing', () => {
+  const { planRemoval, applyRemoval } = require(path.join(ROOT, 'scripts', 'uninstall-legacy.cjs'));
+  const root = mkFakeHome();
+  const res = applyRemoval(planRemoval(root), {
+    runner: null,
+    scope: 'project',
+    dryRun: true,
+    run: () => { throw new Error('run must not be called during a dry run'); },
+  });
+  assert.deepStrictEqual(res.failures, []);
+  for (const id of ['triple-gstack', 'triple-superpowers', 'triple-crown-guide']) {
+    assert.ok(res.actions.some((a) => a.includes(`capability remove ${id}`)), res.actions.join('\n'));
+  }
+});
+
+// F5: 훅을 하나도 못 걷어냈으면 파일을 다시 쓸 이유가 없다 — CLAUDE.md 의 사후 조건과
+// 대칭이다. plan 과 apply 사이에 사용자가 손으로 훅을 지운 경우를 재현한다.
+test('the settings.json hook removal tolerates a hook that vanished mid-flight', () => {
+  const { planRemoval, applyRemoval } = require(path.join(ROOT, 'scripts', 'uninstall-legacy.cjs'));
+  const root = mkFakeHome();
+  const plan = planRemoval(root);
+  assert.strictEqual(plan.settingsGroup, true, 'fixture must start with a ship-guard hook group');
+  const settingsPath = path.join(root, '.claude', 'settings.json');
+  const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+  settings.hooks.PreToolUse = [];
+  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
+  const beforeText = fs.readFileSync(settingsPath, 'utf8');
+  const res = applyRemoval(plan, { runner: null, scope: 'project', run: () => ({ code: 0 }) });
+  assert.strictEqual(fs.readFileSync(settingsPath, 'utf8'), beforeText,
+    'a no-op removal must never rewrite the file');
+  assert.ok(res.failures.some((f) => f.includes('vanished')), res.failures.join('\n'));
+});
+
+// F6: 흔한 실패(GSD 접근 불가)는 원장이 이미 지워진 파일을 계속 가리키게 둔다.
+// 출력이 되돌리는 방법(재실행 또는 백업 복원)을 말해야 한다.
+test('a capability removal failure names the recovery path in its output', () => {
+  const root = mkFakeHome();
+  const from = mkBackup(root);
+  const failingGsd = path.join(tempDir('crew-failing-gsd-'), 'failing-gsd.cjs');
+  fs.writeFileSync(failingGsd,
+    "#!/usr/bin/env node\nconsole.error('ledger is locked');\nprocess.exit(1);\n");
+  const r = runCli(['uninstall-legacy', '--project', root, '--from', from, '--yes'],
+    { CREW_GSD_BIN: failingGsd });
+  assert.strictEqual(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stderr, /Recovery:/);
+  assert.match(r.stderr, /re-run/i);
+  assert.match(r.stderr, /restore/i);
+});
+
+// F7: 스코프별 플래그 이름이 실제로 갈리는지. 홈 스코프의 거부는 --from 이 아니라
+// --from-global 을 지목해야 한다.
+test('the backup-check refusal for the home scope names --from-global, not --from', () => {
+  const home = mkFakeHome();
+  const proj = mkFakeHome();
+  const r = runCli(['uninstall-legacy', '--project', proj, '--global', '--yes',
+    '--from', mkBackup(proj)], { HOME: home, USERPROFILE: home });
+  assert.strictEqual(r.status, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /--from-global/);
+});

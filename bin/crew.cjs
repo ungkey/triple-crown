@@ -688,19 +688,20 @@ async function uninstallLegacy(root,opts) {
     require(path.join(PACKAGE_ROOT,'scripts','uninstall-legacy.cjs'));
 
   // 기본은 프로젝트. 홈은 --global 을 명시해야 열린다 (D13 재발 방지선).
-  // 두 스코프가 같은 트리를 가리키면(예: --project "$HOME" --global) 한 번만 센다 —
-  // 두 번 계획하면 의미 기반 제거가 두 번 돌고 원장 조작이 겹친다.
+  // 두 스코프가 같은 트리를 가리키면(예: --project "$HOME" --global, 또는 심볼릭 링크로
+  // 같은 곳을 도달하는 경우) 한 번만 센다 — realpath 로 비교한다(:81 sameRealPath, install()
+  // 도 :582 에서 같은 이유로 이 술어를 쓴다). 문자열 resolve 비교는 symlink 를 통과한 동일
+  // 트리를 다른 트리로 오판해 같은 홈을 두 번 계획하고 두 번 파괴한다.
   const scopes=[{root,scope:'project',label:`project ${root}`,from:opts.from}];
-  if(opts.global && path.resolve(os.homedir())!==path.resolve(root)) {
+  if(opts.global && !sameRealPath(os.homedir(),root)) {
     scopes.push({root:os.homedir(),scope:'global',label:`home ${os.homedir()}`,from:opts.fromGlobal});
   }
 
   const plans=scopes.map(s=>({...s,plan:planRemoval(s.root)}));
-  const total=plans.reduce((n,p)=>n+p.plan.count,0);
-  if(total===0) { log('nothing to remove: no pre-rename installation found.'); return; }
 
   // 판정 불가가 하나라도 있으면 파괴 경로에 들어가지 않는다. "모른다"를 "없다"로
-  // 읽는 순간 조용한 누락이 된다.
+  // 읽는 순간 조용한 누락이 된다. plan.count 는 판정된 대상만 센다 — undetermined 는
+  // 별도 배열이라 count 에 안 잡힌다. 그래서 이 게이트가 "할 일 없음" 판단보다 먼저 돈다.
   for(const {plan,label} of plans) {
     if(plan.undetermined.length) {
       fail(`UNDETERMINED targets under ${label}:\n`+
@@ -708,6 +709,9 @@ async function uninstallLegacy(root,opts) {
         '\nRemoval refuses to run while anything is undetermined. Inspect those paths by hand first.',2);
     }
   }
+
+  const total=plans.reduce((n,p)=>n+p.plan.count,0);
+  if(total===0) { log('nothing to remove: no pre-rename installation found.'); return; }
 
   if(opts.skipBackupCheck) {
     warn('--skip-backup-check: removing without verifying that a backup covers these targets.');
@@ -743,6 +747,13 @@ async function uninstallLegacy(root,opts) {
   }
   if(failures.length) {
     for(const f of failures) warn(f);
+    // 되돌릴 수 있어야 완료다(설계 §2.4). 흔한 사례(GSD 접근 불가)는 파일은 이미
+    // 지워진 채 원장만 남는다 — 이 명령은 멱등이라 원인을 고친 뒤 그대로 다시 돌리면
+    // 남은 것만 마저 처리한다. 전부 되돌리고 싶다면 --from 으로 넘긴 백업이 있다.
+    warn('Recovery: this command is idempotent — fix the cause above (e.g. make GSD reachable '+
+      'again) and re-run it unchanged; it will only touch what is still left. To undo everything '+
+      `instead, restore from backup: node ${path.join(PACKAGE_ROOT,'scripts','legacy-backup.cjs')} `+
+      'restore --from <that directory>.');
     fail(`legacy removal finished with ${failures.length} failure(s); see the warnings above.`,1);
   }
   log(opts.dryRun

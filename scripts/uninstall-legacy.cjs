@@ -97,13 +97,15 @@ function applyRemoval(plan, opts = {}) {
 
   // 1. capability 원장. 디스크를 손으로 지우지 않는다 — 원장과 디스크가 어긋나면
   //    다음 설치가 "등록돼 있다는데 파일이 없다"는 상태를 만난다.
+  //    dry-run 은 아무것도 쓰지 않는 미리보기다 — runner 가 없어도 무엇을 하려 했는지만
+  //    말하고, 아무것도 하지 않은 실행을 실패로 보고하지 않는다.
   for (const id of plan.capabilities) {
+    if (dry) { say(`capability remove ${id} (--scope ${opts.scope})`); continue; }
     if (!opts.runner) {
       failures.push(`${id}: GSD CLI unavailable — capability left registered`);
       continue;
     }
     say(`capability remove ${id} (--scope ${opts.scope})`);
-    if (dry) continue;
     const r = opts.run(opts.runner, ['capability', 'remove', id, '--scope', opts.scope], plan.root);
     if (r.code !== 0) failures.push(`${id}: ${(r.stderr || r.stdout || '').trim()}`);
   }
@@ -122,18 +124,27 @@ function applyRemoval(plan, opts = {}) {
 
   // 4. settings.json 의 훅 — 정체로 찾는다. 인덱스를 참조하지 않는다.
   //    그룹째 버리면 같은 그룹을 공유하는 사용자 훅이 함께 사라진다. 훅만 뺀다.
+  //    실제로 뭔가 걷어냈을 때만 쓴다 — plan 과 apply 사이에 사용자가 손으로 지웠다면
+  //    파일을 건드리지 않고 실패로 알린다(§2.5.1 의 CLAUDE.md 사후 조건과 대칭).
   if (plan.settingsGroup) {
     say('remove the legacy ship-guard hook from .claude/settings.json');
     if (!dry) {
       const p = abs('.claude/settings.json');
       const settings = JSON.parse(fs.readFileSync(p, 'utf8'));
       const pre = settings.hooks && settings.hooks.PreToolUse;
+      let removedHooks = 0;
       if (Array.isArray(pre)) {
         for (const g of pre) {
           if (!g || !Array.isArray(g.hooks)) continue;
+          const before = g.hooks.length;
           g.hooks = g.hooks.filter(
             (h) => !String((h && h.command) || '').includes(legacy.SHIP_GUARD));
+          removedHooks += before - g.hooks.length;
         }
+      }
+      if (removedHooks === 0) {
+        failures.push('.claude/settings.json: ship-guard hook vanished between plan and apply');
+      } else {
         settings.hooks.PreToolUse = pre.filter((g) => Array.isArray(g && g.hooks) && g.hooks.length);
         if (settings.hooks.PreToolUse.length === 0) delete settings.hooks.PreToolUse;
         if (Object.keys(settings.hooks).length === 0) delete settings.hooks;
@@ -144,7 +155,9 @@ function applyRemoval(plan, opts = {}) {
 
   // 5. CLAUDE.md 의 마커 블록 — 마커 쌍 사이만. 밖은 사용자 것이다.
   //    findMarkerRange 는 첫 쌍만 보고, 없으면 {start:-1,end:-1} 을 준다(null 아님).
-  //    두 사실 중 하나라도 놓치면 사용자 문서가 잘리거나 레거시가 남는다.
+  //    정규화는 스플라이스 접합부에서만 한다 — 파일 전체에 정규식을 돌리면 마커 밖의
+  //    빈 줄 뭉치(펜스 코드 블록 안쪽 포함)까지 사용자 모르게 뭉개진다(설계 §2.2/§2.5.1).
+  //    손대지 않은 구간은 split('\n')/join('\n') 이 바이트 그대로 되돌려준다.
   if (plan.routingBlock) {
     say('remove every managed-routing block from CLAUDE.md');
     if (!dry) {
@@ -155,13 +168,22 @@ function applyRemoval(plan, opts = {}) {
         const { start, end } = legacy.findMarkerRange(lines);
         if (start === -1 || end === -1 || end < start) break;
         lines.splice(start, end - start + 1);
+        // 접합부의 빈 줄만 최대 한 줄로 눌러 붙인다 — 나머지는 건드리지 않는다.
+        let seamEnd = start;
+        while (seamEnd < lines.length && lines[seamEnd] === '') seamEnd++;
+        let seamStart = start;
+        while (seamStart > 0 && lines[seamStart - 1] === '') seamStart--;
+        if (seamEnd - seamStart > 1) lines.splice(seamStart, seamEnd - seamStart - 1);
         removed += 1;
       }
-      const text = lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd();
-      if (text) fs.writeFileSync(p, text + '\n');
-      else fs.rmSync(p, { force: true });
-      // 사후 조건: 이 명령이 "제거 완료"라고 말하면 마커는 0개다.
-      if (removed === 0) failures.push('CLAUDE.md: routing block vanished between plan and apply');
+      // 사후 조건: 이 명령이 "제거 완료"라고 말하면 마커는 0개다. plan 과 apply 사이에
+      // 사용자가 손으로 지웠다면(removed===0) 쓸 것이 없다 — 파일을 건드리지 않는다.
+      if (removed > 0) {
+        if (lines.some((l) => l !== '')) fs.writeFileSync(p, lines.join('\n'));
+        else fs.rmSync(p, { force: true });
+      } else {
+        failures.push('CLAUDE.md: routing block vanished between plan and apply');
+      }
       if (fs.existsSync(p) &&
           legacy.findMarkerRange(fs.readFileSync(p, 'utf8').split('\n')).start !== -1) {
         failures.push('CLAUDE.md: a managed-routing marker survived removal');
