@@ -12,8 +12,16 @@ function ensureArray(obj, key) {
   if (!Array.isArray(obj[key])) obj[key] = [];
   return obj[key];
 }
+// This script runs as a standalone child process of the installer, so it does not
+// require legacy-backup.cjs. Instead it collects the filenames it must recognise
+// here in one place. Same value as legacy-backup.cjs's SHIP_GUARD; if the two ever
+// drift, the "agree on the old filename" test in e2e/contract/legacy-transition.test.cjs
+// catches it.
+const GUARD_FILENAMES = ['crew-ship-guard.cjs', 'triple-crown-ship-guard.cjs'];
 function isGuardHook(h) {
-  return !!h && h.type === 'command' && String(h.command || '').includes('crew-ship-guard.cjs');
+  if (!h || h.type !== 'command') return false;
+  const cmd = String(h.command || '');
+  return GUARD_FILENAMES.some((name) => cmd.includes(name));
 }
 function sameHookGroup(group, command) {
   if (!group || group.matcher !== 'Bash' || !Array.isArray(group.hooks)) return false;
@@ -55,8 +63,16 @@ try {
 
   migrateLegacyRegistrations(pre, command);
 
-  if (!pre.some(group => sameHookGroup(group, command))) {
-    pre.push({
+  // Migration only swaps the old registration's command for the new one. If the new
+  // registration already existed, there are now two identical groups, and the push
+  // check below only decides whether to add a group — it does not remove either one.
+  const matching = pre.filter(g => sameHookGroup(g, command));
+  if (matching.length > 1) {
+    settings.hooks.PreToolUse = pre.filter(g => !sameHookGroup(g, command) || g === matching[0]);
+  }
+
+  if (!settings.hooks.PreToolUse.some(group => sameHookGroup(group, command))) {
+    settings.hooks.PreToolUse.push({
       matcher: 'Bash',
       hooks: [
         {
