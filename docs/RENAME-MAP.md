@@ -215,3 +215,45 @@ M1c 는 그 단언도 함께 뒤집어야 한다.
 `README.md` / `docs/INSTALLER.md` / `bin/crew.cjs:700` 을 건드리면 "문서화된 모든
 tarball 예시가 이 트리가 packing 되는 버전과 일치한다"는 계약(`install-entrypoints.test.cjs`)
 을 깨뜨리거나, 존재하지 않는 릴리스를 문서가 주장하게 만든다.
+
+## M1c 완료 — `crew uninstall-legacy` 계약 (v0.7.0-m1c)
+
+개명 전 설치본은 `crew uninstall-legacy` 로 지운다. `crew uninstall` 과는 별도 명령이다 —
+`bin/crew.cjs:725` 의 주석대로 "개명 전 설치본의 제거. 현행 crew 설치는 건드리지 않는다 —
+그건 `crew uninstall` 이다." 대상 자체가 다르다: `crew uninstall` 은 이 트리가 방금 설치한
+`crew-*` 표면(스킬 6개 · `.crew/` · `crew:managed-routing`)을 되돌리고, `uninstall-legacy` 는
+위 "M1c `crew uninstall-legacy` 가 제거할 대상" 절의 여섯 곳 — `triple-*` capability id ·
+`.triple-crown-skill` 마커 · `triple-crown-ship-guard.cjs` · 구 훅 그룹 · `triple-crown:managed-routing`
+블록 · `.triple-crown/` 벤더 트리 — 를 지운다. 두 동작을 한 명령 뒤에 숨기면 "이번에 설치한
+것을 되돌린다"와 "이전 브랜드의 잔재를 지운다"라는 서로 다른 위험 등급이 같은 플래그로
+가려진다.
+
+**백업이 왜 필수인가.** 제거 대상은 머신 전역(`$HOME`) 라우팅과 ship 가드다 — 되돌릴 수
+없으면 다른 프로젝트의 GSD 라우팅과 ship 보호가 통째로 사라진다(설계 §2.3). `checkBackup`
+(`scripts/uninstall-legacy.cjs:48`)은 "백업이 있다"가 아니라 (1) 같은 루트에서 떴고 (2)
+`MANIFEST.json` 이 아카이브와 무결하며 (3) 지금 지우려는 대상을 전부 담고 있는지를 본다 —
+셋 중 하나라도 아니면 거부한다. `--skip-backup-check` 로만 우회할 수 있고, 우회하면 경고를
+찍는다. 기본은 프로젝트 스코프이고 `--global` 을 명시해야 `$HOME` 이 열린다(D13 재발
+방지, §2.0 4번과 같은 원칙) — 스코프마다 별도 백업(`--from` / `--from-global`)이 필요하다.
+UNDETERMINED 대상이 하나라도 있으면 이 게이트보다 먼저 거부한다 — "모른다"를 "없다"로
+읽지 않는다. 지울 것이 0개(`total===0`)일 때만 예외다: 게이트 자체가 없다 — 지울 게
+없으면 백업 유무를 따질 대상도 없다(`bin/crew.cjs:756`).
+
+**왜 이 저장소의 개발 머신에서는 한 번도 실행하지 않았는가.** `scripts/legacy-backup.cjs
+detect` 실측: `legacy targets: 0`, `undetermined: 0` — 이 머신에는 지울 개명 전 설치가
+없다. M1c 의 완료 판정은 실 `$HOME` 이 아니라 `e2e/contract/helpers/fake-home.cjs` 로 만든
+픽스처에서 돈다 — 대상이 없는 상태에서 파괴적 명령을 실 홈에 돌리는 것은 애초에 아무것도
+검증하지 못하고, 대상이 있다고 가정해 억지로 만들어 지우는 것은 "돌이킬 수 없는 실험을
+완료 판정에 넣는다"는, 계획이 명시적으로 금지하는 일이다.
+
+### M1d 로 이월된 것 (리뷰에서 확인, M1c 범위 밖)
+
+- **`checkBackup` 의 내용 일치 검증.** 백업 이후 대상이 수정됐으면 복구는 옛 내용을
+  돌려준다. 해시 일치를 요구하면 백업 직후가 아닌 한 게이트가 열리지 않아 명령이
+  못 쓰게 된다. 백업 시각(`manifest.createdAt`)은 매니페스트에는 기록되지만
+  (`scripts/legacy-backup.cjs:241`) 거부·성공 메시지에는 아직 노출되지 않는다.
+- **제거의 트랜잭션화.** 현재 답은 `REMOVAL_ORDER`(벤더 트리를 마지막에 지워 부분
+  실패의 흔적을 남김)와 백업 안의 `restore.sh` 다. 완전한 롤백은 M1c 범위보다 크다.
+- **`rollbackCapabilities` 의 id 별 사전 스냅샷.** `hadPrevious` 는 `.crew` 존재 비트
+  하나뿐이라, 이전에 등록되지 않았던 id 를 재설치할 수 있다.
+- **`detect --root` 출력의 `~/` 접두사.** 프로젝트 루트로 실행하면 거짓말이 된다.
