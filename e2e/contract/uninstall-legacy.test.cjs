@@ -10,6 +10,7 @@ const { mkFakeHome, ROUTING_BLOCK } = require('./helpers/fake-home.cjs');
 
 const UNINSTALL = require(path.join(ROOT, 'scripts', 'uninstall-legacy.cjs'));
 const BACKUP_CLI = path.join(ROOT, 'scripts', 'legacy-backup.cjs');
+const LEGACY_BACKUP = require(path.join(ROOT, 'scripts', 'legacy-backup.cjs'));
 
 function mkBackup(root) {
   const dest = path.join(tempDir('crew-backup-'), 'out');
@@ -411,4 +412,61 @@ test('the backup-check refusal for the home scope names --from-global, not --fro
     '--from', mkBackup(proj)], { HOME: home, USERPROFILE: home });
   assert.strictEqual(r.status, 2, r.stdout + r.stderr);
   assert.match(r.stderr, /--from-global/);
+});
+
+// --- 리뷰 라운드 2 — F3 재오픈: 접합부 정규화가 여전히 마커 밖 바이트를 건드렸다 ------
+//
+// 이 아래 테스트들은 mkFakeHome 을 쓰지 않는다 — 그 픽스처는 마커 블록을 항상 파일의
+// 절대 시작에 놓아서, "블록이 파일 끝(마지막 내용)일 때" 경로가 한 번도 실행되지
+// 않았다. 정확한 바이트를 손으로 통제하려고 손으로 쓴 CLAUDE.md 를 applyRemoval 에
+// 직접 물린다.
+
+const { ROUTING_START, ROUTING_END } = LEGACY_BACKUP;
+
+// planRemoval 이 routingBlock 하나만 참이 되는 최소 트리를 만든다(다른 다섯 종류는
+// 심지 않는다) — 그러면 applyRemoval 의 1~4·6 단계는 전부 no-op 이고 5 단계(CLAUDE.md)
+// 의 바이트 결과만 격리해서 볼 수 있다.
+function planAndApplyClaudeMd(content) {
+  const root = tempDir('crew-claudemd-');
+  fs.writeFileSync(path.join(root, 'CLAUDE.md'), content);
+  const { planRemoval, applyRemoval } = require(path.join(ROOT, 'scripts', 'uninstall-legacy.cjs'));
+  const plan = planRemoval(root);
+  assert.ok(plan.routingBlock, 'fixture must contain a routing block');
+  assert.strictEqual(plan.count, 1, 'fixture must plant nothing besides the routing block');
+  const res = applyRemoval(plan, { runner: null, scope: 'project', run: () => ({ code: 0 }) });
+  const p = path.join(root, 'CLAUDE.md');
+  const after = fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null;
+  return { after, failures: res.failures };
+}
+
+test('a routing block at end-of-file, preceded by a blank line, leaves exactly that blank line behind', () => {
+  // 회귀 재현 사례 그대로: 마커가 파일의 마지막 내용이고, 그 앞에 사용자가 둔 빈 줄이
+  // 하나 있다. 예전 버그는 이 빈 줄을 split('\n') 이 만드는 EOF 아티팩트와 뭉개서
+  // "intro line\n" 으로 줄였다 — 정답은 "intro line\n\n" (빈 줄이 살아남는다).
+  const before = `intro line\n\n${ROUTING_START}\n## routing\nrouting body line\n${ROUTING_END}\n`;
+  const { after, failures } = planAndApplyClaudeMd(before);
+  assert.strictEqual(after, 'intro line\n\n');
+  assert.deepStrictEqual(failures, []);
+});
+
+test('a routing block at the very start of the file leaves the exact tail behind, byte for byte', () => {
+  const before = `${ROUTING_START}\n## routing\nrouting body line\n${ROUTING_END}\n\n# user heading\nuser line kept\n`;
+  const { after, failures } = planAndApplyClaudeMd(before);
+  assert.strictEqual(after, '\n# user heading\nuser line kept\n');
+  assert.deepStrictEqual(failures, []);
+});
+
+test('two routing blocks removed in one run, the second at end-of-file, leave exact surviving bytes', () => {
+  const before = `intro\n\n${ROUTING_START}\n## routing\nbody1\n${ROUTING_END}\n\nmiddle\n\n`+
+    `${ROUTING_START}\n## routing\nbody2\n${ROUTING_END}\n`;
+  const { after, failures } = planAndApplyClaudeMd(before);
+  assert.strictEqual(after, 'intro\n\nmiddle\n\n');
+  assert.deepStrictEqual(failures, []);
+});
+
+test('a CLAUDE.md with no trailing newline keeps that property intact after removal', () => {
+  const before = `intro\n\n${ROUTING_START}\n## routing\nbody\n${ROUTING_END}\n\ntrailer without newline`;
+  const { after, failures } = planAndApplyClaudeMd(before);
+  assert.strictEqual(after, 'intro\n\ntrailer without newline');
+  assert.deepStrictEqual(failures, []);
 });

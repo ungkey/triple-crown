@@ -157,12 +157,18 @@ function applyRemoval(plan, opts = {}) {
   //    findMarkerRange 는 첫 쌍만 보고, 없으면 {start:-1,end:-1} 을 준다(null 아님).
   //    정규화는 스플라이스 접합부에서만 한다 — 파일 전체에 정규식을 돌리면 마커 밖의
   //    빈 줄 뭉치(펜스 코드 블록 안쪽 포함)까지 사용자 모르게 뭉개진다(설계 §2.2/§2.5.1).
-  //    손대지 않은 구간은 split('\n')/join('\n') 이 바이트 그대로 되돌려준다.
+  //    줄마다 자기 개행을 붙여서 쪼갠다(split('\n') 이 아니라 뒤돌아보기로) — 구분자를
+  //    배열 밖에 따로 두면 지운 범위가 파일 끝에 닿을 때 "그 사이 개행"이 마커 앞 줄
+  //    소유인지 파일의 trailing-newline 표시인지 애매해진다(리뷰 F3: 정확히 이 자리에서
+  //    마커 앞의 진짜 빈 줄이 EOF 아티팩트와 뭉개져 사라졌었다). 줄마다 개행을 들고
+  //    있으면 손대지 않은 조각은 이어 붙이기(구분자 없이)만 해도 바이트 그대로 나온다.
   if (plan.routingBlock) {
     say('remove every managed-routing block from CLAUDE.md');
     if (!dry) {
       const p = abs('CLAUDE.md');
-      const lines = fs.readFileSync(p, 'utf8').split('\n');
+      const raw = fs.readFileSync(p, 'utf8');
+      const lines = raw.length ? raw.split(/(?<=\n)/) : [];
+      const isBlank = (l) => typeof l === 'string' && l.replace(/\n$/, '') === '';
       let removed = 0;
       for (;;) {
         const { start, end } = legacy.findMarkerRange(lines);
@@ -170,16 +176,16 @@ function applyRemoval(plan, opts = {}) {
         lines.splice(start, end - start + 1);
         // 접합부의 빈 줄만 최대 한 줄로 눌러 붙인다 — 나머지는 건드리지 않는다.
         let seamEnd = start;
-        while (seamEnd < lines.length && lines[seamEnd] === '') seamEnd++;
+        while (seamEnd < lines.length && isBlank(lines[seamEnd])) seamEnd++;
         let seamStart = start;
-        while (seamStart > 0 && lines[seamStart - 1] === '') seamStart--;
+        while (seamStart > 0 && isBlank(lines[seamStart - 1])) seamStart--;
         if (seamEnd - seamStart > 1) lines.splice(seamStart, seamEnd - seamStart - 1);
         removed += 1;
       }
       // 사후 조건: 이 명령이 "제거 완료"라고 말하면 마커는 0개다. plan 과 apply 사이에
       // 사용자가 손으로 지웠다면(removed===0) 쓸 것이 없다 — 파일을 건드리지 않는다.
       if (removed > 0) {
-        if (lines.some((l) => l !== '')) fs.writeFileSync(p, lines.join('\n'));
+        if (lines.some((l) => !isBlank(l))) fs.writeFileSync(p, lines.join(''));
         else fs.rmSync(p, { force: true });
       } else {
         failures.push('CLAUDE.md: routing block vanished between plan and apply');
