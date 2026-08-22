@@ -680,9 +680,32 @@ function doctorSnapshot(opts) {
     checks.push({id,status:ok?'PASS':(severity==='optional'?'WARN':'FAIL'),detail});
   }
   add('planning', exists(path.join(root,'.planning','STATE.md')), '.planning/STATE.md');
-  add('crew-quality', exists(path.join(root,'.gsd','capabilities','crew-quality','capability.json')), 'project capability staged');
-  add('crew-discipline', exists(path.join(root,'.gsd','capabilities','crew-discipline','capability.json')), 'project capability staged');
-  add('crew-guide', exists(path.join(root,'.gsd','capabilities','crew-guide','capability.json')) || path.resolve(__dirname,'..').startsWith(root), 'guide capability staged/source');
+  // 기대 capability 목록은 **설치자가 남긴 매니페스트**에서 온다. `.gsd/capabilities/` 를
+  // 훑어서 만들면 안 된다 — capability 가 안 깔린 프로젝트에는 그 디렉터리가 아예 없으므로
+  // 훑어 봐야 단언할 것이 없고, 검사는 "찾은 게 없으니 문제도 없다"로 초록이 된다. 그게 바로
+  // 이 검사가 막아야 하는 공백이다(M1b: 하드코딩된 셋만 보다가 crew-ship 이 안 깔려
+  // ship 인증 게이트가 무장 안 된 프로젝트를 READY=true 로 보고했다).
+  // bin/crew.cjs 의 prepareStableSource() 가 설치 때마다 CAPABILITIES 를 여기에 적는다.
+  const installManifest = readJson(path.join(root,'.crew','INSTALL-MANIFEST.json'));
+  const expectedCaps = installManifest && Array.isArray(installManifest.capabilities)
+    ? installManifest.capabilities.filter(c=>typeof c==='string' && c) : [];
+  if (!expectedCaps.length) {
+    // 매니페스트가 없으면 무엇이 깔려 있어야 하는지를 알 수 없다. 모른다는 사실을 READY 로
+    // 보고하지 않는다 — 모르는 채 통과시키는 것이 위와 똑같은 공백이기 때문이다.
+    add('install-manifest', false,
+      `${path.join(root,'.crew','INSTALL-MANIFEST.json')} missing or lists no capabilities — cannot tell which capabilities this project expects; re-run the Crew installer`);
+  } else {
+    add('install-manifest', true, `${expectedCaps.length} capabilities expected: ${expectedCaps.join(', ')}`);
+    for (const id of expectedCaps) {
+      // crew-guide 만 예외다: 저장소 소스 트리에서 직접 돌 때는 스테이징 없이도 자기 자신이다.
+      const staged = path.join(root,'.gsd','capabilities',id,'capability.json');
+      const sourceFallback = id === 'crew-guide' && path.resolve(__dirname,'..').startsWith(root);
+      const ok = exists(staged) || sourceFallback;
+      add(id, ok,
+        ok ? (id === 'crew-guide' ? 'guide capability staged/source' : 'project capability staged')
+           : `not staged: ${staged} missing — re-run the Crew installer`);
+    }
+  }
   add('ship-guard', exists(path.join(root,'.claude','hooks','crew-ship-guard.cjs')), '.claude hook installed', 'optional');
   const fail = checks.filter(c=>c.status==='FAIL').length;
   return {schema:1,projectRoot:root,checks,ready:fail===0};

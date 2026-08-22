@@ -182,7 +182,9 @@
       "consumes": [
         "GSTACK-CODE-REVIEW.json",
         "SUMMARY.md"
-      ]
+      ],
+      "when": "crew.gstack.qa_enabled",
+      "onError": "halt"
     },
     {
       "point": "execute:post",
@@ -195,7 +197,9 @@
       ],
       "consumes": [
         "SUMMARY.md"
-      ]
+      ],
+      "when": "crew.gstack.code_review_enabled",
+      "onError": "halt"
     },
     {
       "point": "execute:post",
@@ -207,7 +211,9 @@
       "consumes": [
         "GSTACK-QA.json",
         "SUMMARY.md"
-      ]
+      ],
+      "when": "crew.gstack.security_enabled",
+      "onError": "halt"
     },
     {
       "point": "ship:post",
@@ -220,29 +226,69 @@
       ],
       "consumes": [
         "UAT.md"
-      ]
+      ],
+      "when": "crew.gstack.post_ship_enabled",
+      "onError": "skip"
     }
   ],
   "gates": [
     {
       "point": "plan:post",
-      "check": "plan-review-current.cjs"
+      "kind": "command-exit-zero",
+      "command": "node \"${GSD_CAP_DIR}/checks/plan-review-current.cjs\" \"${PHASE_DIR}\"",
+      "timeout": 10,
+      "when": "crew.gstack.plan_review_required",
+      "blocking": true,
+      "onError": "halt"
     },
     {
       "point": "ship:pre",
-      "check": "security-ready.cjs"
+      "kind": "command-exit-zero",
+      "command": "node \"${GSD_CAP_DIR}/checks/security-ready.cjs\" \"${PHASE_DIR}\"",
+      "timeout": 15,
+      "when": "crew.gstack.security_enabled",
+      "blocking": true,
+      "onError": "halt"
     },
     {
       "point": "ship:pre",
-      "check": "ship-guard-control.cjs"
+      "kind": "command-exit-zero",
+      "command": "node \"${GSD_CAP_DIR}/checks/ship-guard-control.cjs\" arm-gsd \"${PHASE_DIR}\"",
+      "timeout": 10,
+      "when": "crew.ship.guard_enabled",
+      "blocking": true,
+      "onError": "halt"
     },
     {
       "point": "verify:pre",
-      "check": "qa-ready.cjs"
+      "kind": "command-exit-zero",
+      "command": "node \"${GSD_CAP_DIR}/checks/qa-ready.cjs\" \"${PHASE_DIR}\"",
+      "timeout": 15,
+      "when": "crew.gstack.qa_enabled",
+      "blocking": true,
+      "onError": "halt"
     },
     {
       "point": "verify:pre",
-      "check": "verify-ready.cjs"
+      "kind": "command-exit-zero",
+      "command": "node \"${GSD_CAP_DIR}/checks/verify-ready.cjs\" \"${PHASE_DIR}\"",
+      "timeout": 15,
+      "when": "crew.gstack.code_review_enabled",
+      "blocking": true,
+      "onError": "halt"
+    }
+  ],
+  "contributions": [
+    {
+      "point": "execute:wave:pre",
+      "into": "executor",
+      "fragment": "fragments/execute-wave-pre.md",
+      "produces": [],
+      "consumes": [
+        "PLAN.md"
+      ],
+      "when": "crew.superpowers.enabled",
+      "onError": "skip"
     }
   ]
 }
