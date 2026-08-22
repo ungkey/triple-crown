@@ -46,8 +46,9 @@ config 루트·capability id·마커가 바뀌므로 이것은 breaking rename �
 
 `v0.7.0-m1b` 에서 `crew-quality` 의 **릴리스 표면**을 `crew-ship` 으로 떼어냈다. capability 는
 3개에서 **4개**가 됐다 — `crew-discipline` · `crew-quality` · `crew-ship` · `crew-guide`.
-`bin/crew.cjs` 의 `CAPABILITIES` 배열이 이 순서를 소유하고, `e2e/contract/capability-split.test.cjs`
-의 첫 펜스가 디스크와의 완전 일치를 매 커밋 검사한다.
+`bin/crew.cjs` 의 `CAPABILITIES` 배열이 이 순서를 소유한다. `e2e/contract/capability-split.test.cjs`
+의 첫 펜스가 배열과 디스크의 **집합** 일치를, 둘째 펜스가 **순서 자체**를 매 커밋 검사한다 —
+첫 펜스는 양쪽을 정렬해 비교하므로 조용한 재배치를 통과시키고, uninstall 은 이 배열을 뒤집어 쓴다.
 
 | 구분 | 구 위치 (`crew-quality`) | 신 위치 (`crew-ship`) |
 |---|---|---|
@@ -95,8 +96,18 @@ GSD 자신이 만드는 `UAT.md` 하나뿐이라 사슬을 끊지 않기 때문�
 `crew-core`(M2) · `crew-flow`(M2) · `crew-demo`(M5) · `crew-concept`(M7) 도 M1b 에 없다 — 각자
 시점 소관이다(`docs/V0.7-IMPLEMENTATION-DESIGN.md` §5 · §10). `crew-security` 는 GSD 가 단일 항목
 capMap 을 고친 뒤에 다시 본다. 실측 근거는
-`docs/superpowers/plans/2026-08-21-m1b-capability-split.md` 에, 계약은
-`e2e/contract/capability-split.test.cjs` 의 펜스 8종에 있다.
+`docs/superpowers/plans/2026-08-21-m1b-capability-split.md` 에 있다.
+
+계약은 한 파일이 아니라 **두 층**에 있다. 어느 층이 무엇을 못박는지가 중요하다:
+
+| 층 | 어디 | 무엇을 못박나 |
+|---|---|---|
+| L1 | `e2e/contract/capability-split.test.cjs` (펜스 11종) | 설치 가능성(`requires` · 교차 capability `consumes` · config 키/skill stem 중복 · `CREW_CAP` 자기참조) · `CAPABILITIES` 집합과 **순서** · point 별 렌더 순서 · 소유권을 **뺀** 표면 골든 · 릴리스 표면의 **소유자** |
+| L0 | `tests/validate_prototype.py` (`SHIP_SURFACE_CHECKED`) · `e2e/assert-hooks.cjs` (`capId:'crew-ship'`) | 같은 소유권을 매니페스트와 렌더 결과 양쪽에서 독립으로 재확인 |
+
+한 층만으로는 부족하다. 표면 골든은 **설계상** 소유권을 기록하지 않으므로 `crew-ship` 을
+`crew-quality` 로 되돌리는 재병합에 침묵하고, L0 는 매니페스트 값의 전체 표면을 보지 않는다.
+CI(`.github/workflows/l1.yml`)는 두 층을 모두 돌린다.
 
 ## 바꾸지 않은 것
 
