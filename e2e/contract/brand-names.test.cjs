@@ -18,6 +18,7 @@ const LEGACY = /triple-crown|triple_crown|triple-gstack|triple-superpowers|TRIPL
 const ALLOW = [
   'scripts/legacy-backup.cjs',
   'e2e/contract/legacy-backup.test.cjs',
+  'e2e/contract/legacy-module.test.cjs',
   'e2e/contract/helpers/fake-home.cjs',
   'e2e/contract/legacy-transition.test.cjs',
   'e2e/compatibility-baseline.json',

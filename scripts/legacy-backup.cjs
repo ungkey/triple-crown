@@ -14,8 +14,15 @@ const crypto = require('crypto');
 const ROUTING_START = '<!-- triple-crown:managed-routing:start -->';
 const ROUTING_END = '<!-- triple-crown:managed-routing:end -->';
 const SHIP_GUARD = 'triple-crown-ship-guard.cjs';
-const CAPABILITIES = ['triple-gstack', 'triple-superpowers', 'triple-crown-guide'];
+// scripts/uninstall-legacy.cjs 가 벤더 트리 이름을 필요로 하는데, 그 파일은 개명 전 어휘를
+// 하나도 갖지 않는 것이 아키텍처 주장이라 brand-names.test.cjs 허용목록에 넣을 수 없다 —
+// 그래서 이 어휘도 legacy-backup.cjs 가 소유한다.
+const VENDOR_DIR = '.triple-crown';
+const LEGACY_CAPABILITIES = ['triple-gstack', 'triple-superpowers', 'triple-crown-guide'];
 const SKILL_MARKERS = ['.triple-crown-skill', '.crew-skill'];
+// 제거가 보는 마커는 구 것 하나뿐이다. SKILL_MARKERS 를 그대로 쓰면 uninstall-legacy 가
+// 현행 crew 스킬까지 지운다 — 백업은 넓게 담고 제거는 좁게 지운다.
+const LEGACY_SKILL_MARKERS = ['.triple-crown-skill'];
 // Triple Crown이 '소유'하지 않고 '일부 구간만 편집'하는 사용자 파일. 백업은 하되 통째로 지우거나
 // 되돌리지 않는다 (restoreOrder에서 제외 — 설계 §2.5.1의 의미 기반 재삽입 대상).
 const SEMANTIC = new Set(['CLAUDE.md', '.claude/settings.json']);
@@ -43,18 +50,14 @@ function flushPendingActions() {
   pendingActions = null;
   for (const a of actions) log((dryRun ? '[dry-run] ' : '') + a);
 }
+// bin/crew.cjs:30 과 같은 모양. require 가능한 라이브러리는 process.exit 로 호출자의
+// 프로세스를 끝내면 안 된다 — checkBackup(Task 2) 이 verifyArchive 를 try/catch 로 감싸도
+// 아무것도 못 잡는다. exitCode 는 CLI 진입점(require.main 블록)이 실제 종료 코드로 쓴다.
 function fail(msg, code = 1) {
-  flushPendingActions();
-  cleanup();
-  process.stderr.write(`legacy-backup: ${msg}\n`);
-  process.exit(code);
+  const e = new Error(msg);
+  e.exitCode = code;
+  throw e;
 }
-// 마지막 그물. flushPendingActions()는 fail() 안에서만 도는데, 네이티브 예외(EISDIR/ENOENT/
-// EACCES...)는 fail()을 거치지 않고 프로세스를 끝낸다 — 그러면 exit 1(계약은 2)에 stdout은
-// 비어 있고, 원본을 옮겨둔 ~/.crew-legacy-rollback-XXXXXX 위치가 어디에도 안 나온다. 홈을
-// 이미 교체한 뒤라면 그게 사용자가 원본을 되찾을 유일한 단서다. 개별 던지는 지점을 하나씩
-// 막는 것으로는 "다음에 추가될 던지는 지점"을 못 막으므로, 여기서 계열 전체를 봉쇄한다.
-process.on('uncaughtException', (e) => fail(`unexpected error: ${(e && e.message) || e}`, 2));
 
 function sha256(buf) { return 'sha256:' + crypto.createHash('sha256').update(buf).digest('hex'); }
 function exists(p) { try { fs.lstatSync(p); return true; } catch { return false; } }
@@ -88,14 +91,15 @@ function walkFiles(abs, rel, out) {
 // undetermined[]: 판정할 수 없었던 항목을 삼키지 않고 호출자에게 돌려준다. detect는
 // UNDETERMINED로 보고하고(항상 exit 0), backup은 매니페스트에서 빠진다는 사실을 경고로
 // 드러낸다 — 조용한 누락이 가장 나쁜 결과다.
-function collectTargets(home, undetermined = []) {
+function collectTargets(root, undetermined = [], opts = {}) {
+  const markers = opts.markers || SKILL_MARKERS;
   const targets = [];
-  const dir = (rel) => { if (exists(path.join(home, rel))) targets.push({ rel, kind: 'dir' }); };
-  const file = (rel) => { if (exists(path.join(home, rel))) targets.push({ rel, kind: 'file' }); };
-  dir('.triple-crown');
-  for (const id of CAPABILITIES) dir(`.gsd/capabilities/${id}`);
+  const dir = (rel) => { if (exists(path.join(root, rel))) targets.push({ rel, kind: 'dir' }); };
+  const file = (rel) => { if (exists(path.join(root, rel))) targets.push({ rel, kind: 'file' }); };
+  dir(VENDOR_DIR);
+  for (const id of LEGACY_CAPABILITIES) dir(`.gsd/capabilities/${id}`);
   file(`.claude/hooks/${SHIP_GUARD}`);
-  const skillsRoot = path.join(home, '.claude', 'skills');
+  const skillsRoot = path.join(root, '.claude', 'skills');
   if (exists(skillsRoot)) {
     for (const e of fs.readdirSync(skillsRoot).sort()) {
       const d = path.join(skillsRoot, e);
@@ -105,7 +109,7 @@ function collectTargets(home, undetermined = []) {
       let isDir;
       try { isDir = fs.statSync(d).isDirectory(); }
       catch (err) { undetermined.push(`.claude/skills/${e} (${err.code || err.message})`); continue; }
-      if (isDir && SKILL_MARKERS.some((m) => exists(path.join(d, m)))) {
+      if (isDir && markers.some((m) => exists(path.join(d, m)))) {
         targets.push({ rel: `.claude/skills/${e}`, kind: 'dir' });
       }
     }
@@ -128,8 +132,8 @@ function findMarkerRange(lines) {
 // 없으면 detect는 { present:false, readError } 를 받아 UNDETERMINED로 보고하고 exit 0을
 // 지킨다. backup은 1인자 호출로 loud fail(2) — 읽지 못한 파일을 두고 claudeMd.present:false
 // 매니페스트를 쓰면 restore가 "백업에 fragment 없음"으로 알고 조용히 건너뛰는 거짓 백업이 된다.
-function extractFragment(home, opts = {}) {
-  const p = path.join(home, 'CLAUDE.md');
+function extractFragment(root, opts = {}) {
+  const p = path.join(root, 'CLAUDE.md');
   if (!exists(p)) return { present: false };
   let text;
   try { text = fs.readFileSync(p, 'utf8'); }
@@ -166,8 +170,8 @@ function hasShipGuardGroup(g) {
 // 권한이 없으면(EACCES) 감싸지 않은 readFileSync 가 던져서 detect 가 exit 2 하고
 // `legacy targets:` 줄 자체가 안 나온다 — extractFragment 는 이미 감싸져 있었는데
 // 대칭 경로인 여기만 노출돼 있었다.
-function extractHookGroup(home, opts = {}) {
-  const p = path.join(home, '.claude', 'settings.json');
+function extractHookGroup(root, opts = {}) {
+  const p = path.join(root, '.claude', 'settings.json');
   if (!exists(p)) return { present: false };
   let raw;
   try { raw = fs.readFileSync(p); }
@@ -190,7 +194,7 @@ function extractHookGroup(home, opts = {}) {
 // "레거시가 설치돼 있는가"의 판정. 파일 존재가 아니라 **Triple Crown이 심은 것**을 센다.
 // ~/.claude/settings.json은 Claude Code가 깔린 거의 모든 머신에 있다 — 그걸 세면 레거시를
 // 설치한 적 없는 PC에서도 0이 안 나오고, Task 9의 "0이면 스킵" 분기가 영영 안 걸린다.
-function legacySignals(home, targets, frag, hook) {
+function legacySignals(root, targets, frag, hook) {
   const owned = targets.filter((t) => !SEMANTIC.has(t.rel));
   return {
     owned,
@@ -199,28 +203,31 @@ function legacySignals(home, targets, frag, hook) {
 }
 
 function backup(opts) {
-  const home = os.homedir();
-  const dest = opts.dest || path.join(home, '.crew-legacy-backup', localDate());
+  // 루트 일반화: --root 가 있으면 프로젝트 트리, 없으면 지금까지처럼 $HOME. scope 는
+  // 매니페스트에 남아 restore --root 없이 재생될 때 어느 종류의 백업인지 알려준다.
+  const root = opts.root ? path.resolve(opts.root) : os.homedir();
+  const scope = opts.root ? 'project' : 'home';
+  const dest = opts.dest || path.join(os.homedir(), '.crew-legacy-backup', localDate());
   if (exists(dest) && fs.readdirSync(dest).length) {
     fail(`backup destination already exists and is not empty: ${dest}`, 2);
   }
   const undetermined = [];
-  const targets = collectTargets(home, undetermined);
-  const frag = extractFragment(home);
-  const hook = extractHookGroup(home);
+  const targets = collectTargets(root, undetermined);
+  const frag = extractFragment(root);
+  const hook = extractHookGroup(root);
   // 판정하지 못한 항목은 매니페스트에서 빠진다 — 조용히 빠뜨리지 않고 밝힌다.
   for (const u of undetermined) log(`WARNING: could not inspect ~/${u} — not included in this backup`);
   // 판정은 detect와 같은 술어를 쓴다. stock settings.json 하나만 있는 홈을 "백업했다"고
   // 말하면 그게 가장 위험한 거짓 안심이다.
-  if (!legacySignals(home, targets, frag, hook).count) {
+  if (!legacySignals(root, targets, frag, hook).count) {
     fail('nothing to back up: no legacy installation found', 2);
   }
   const files = [];
-  for (const t of targets) walkFiles(path.join(home, t.rel), t.rel, files);
+  for (const t of targets) walkFiles(path.join(root, t.rel), t.rel, files);
 
   fs.mkdirSync(dest, { recursive: true });
   const tar = cp.spawnSync('tar',
-    ['-czf', path.join(dest, 'archive.tar.gz'), '-C', home, '--', ...targets.map((t) => t.rel)],
+    ['-czf', path.join(dest, 'archive.tar.gz'), '-C', root, '--', ...targets.map((t) => t.rel)],
     { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8' });
   if (tar.error || tar.status !== 0) {
     fail(`tar failed: ${(tar.stderr || (tar.error && tar.error.message) || '').trim()}`, 2);
@@ -232,7 +239,8 @@ function backup(opts) {
   const manifest = {
     schema: 1,
     createdAt: new Date().toISOString(),
-    home,
+    home: root,               // 이 백업을 뜬 루트. 키 이름은 하위 호환으로 유지한다
+    scope,                    // 'home' | 'project'
     restoreOrder: targets.filter((t) => !SEMANTIC.has(t.rel)).map((t) => t.rel),
     targets,
     files,
@@ -521,7 +529,10 @@ function applyRestore(home, tmp, restoreOrder, actions) {
 }
 
 function restore(opts) {
-  const home = os.homedir();
+  // R2: 이 한 줄이 restore 전체의 루트를 정한다. 아래 7곳(assertRestoreHome, 탈출 검사,
+  // 로그, applyRestore, restoreClaudeMd, restoreSettings)은 이 home 을 그대로 따라간다 —
+  // 개별로 고치지 않는다. --root 가 없으면 지금까지처럼 $HOME.
+  const home = opts.root ? path.resolve(opts.root) : os.homedir();
   if (!opts.from) fail('--from <backup dir> is required', 2);
   const { manifest, problems } = verifyArchive(opts.from);   // 설계 §2.5 1단계
   if (problems.length) {
@@ -588,14 +599,16 @@ function restore(opts) {
 
 // 판정용 — 이 머신에 실제로 뭐가 있는지만 보고한다. 부재는 오류가 아니므로 항상 exit 0.
 // Task 9 런북이 파괴적 단계로 갈지 말지를 이 출력 하나로 결정한다.
-function detect() {
-  const home = os.homedir();
+function detect(opts) {
+  const root = opts.root ? path.resolve(opts.root) : os.homedir();
   const undetermined = [];
-  const targets = collectTargets(home, undetermined);
-  const frag = extractFragment(home, { tolerant: true });
-  const hook = extractHookGroup(home, { tolerant: true });
-  const { owned, count } = legacySignals(home, targets, frag, hook);
-  log(`home: ${home}`);
+  const targets = collectTargets(root, undetermined);
+  const frag = extractFragment(root, { tolerant: true });
+  const hook = extractHookGroup(root, { tolerant: true });
+  const { owned, count } = legacySignals(root, targets, frag, hook);
+  // 라벨 `home: ` 은 그대로 둔다 — e2e/contract/legacy-backup.test.cjs:91 이 이 문자열을
+  // 소비한다. 값만 root 로 바뀐다 (홈 스코프에서는 root === os.homedir() 이라 동일하다).
+  log(`home: ${root}`);
   for (const t of owned) log(`  owned  ${t.kind === 'dir' ? 'dir ' : 'file'} ~/${t.rel}`);
   for (const u of undetermined) log(`  UNDETERMINED  ~/${u}`);
   if (frag.readError) {
@@ -621,12 +634,13 @@ function detect() {
 }
 
 function parseArgs(argv) {
-  const out = { command: argv[0], dest: null, from: null, dryRun: false, allowForeignHome: false };
+  const out = { command: argv[0], dest: null, from: null, root: null, dryRun: false, allowForeignHome: false };
   const rest = argv.slice(1);
   while (rest.length) {
     const a = rest.shift();
     if (a === '--dest') out.dest = rest.shift() || fail('--dest requires a path', 2);
     else if (a === '--from') out.from = rest.shift() || fail('--from requires a path', 2);
+    else if (a === '--root') out.root = rest.shift() || fail('--root requires a path', 2);
     else if (a === '--dry-run') out.dryRun = true;
     else if (a === '--allow-foreign-home') out.allowForeignHome = true;
     else fail(`unknown option: ${a}`, 2);
@@ -634,10 +648,35 @@ function parseArgs(argv) {
   return out;
 }
 
-const opts = parseArgs(process.argv.slice(2));
-if (opts.command === 'detect') detect();            // Task 3 — 여기서 빠뜨리면 Task 9 Step 1이 죽는다
-else if (opts.command === 'backup') backup(opts);
-else if (opts.command === 'verify') verify(opts);
-else if (opts.command === 'restore') restore(opts);
-else fail('usage: legacy-backup.cjs detect | backup [--dest DIR] | verify --from DIR | ' +
-  'restore --from DIR [--dry-run] [--allow-foreign-home]', 2);
+module.exports = {
+  ROUTING_START, ROUTING_END, SHIP_GUARD,
+  LEGACY_CAPABILITIES, SKILL_MARKERS, LEGACY_SKILL_MARKERS, SEMANTIC, VENDOR_DIR,
+  collectTargets, findMarkerRange, extractFragment,
+  hasShipGuardGroup, extractHookGroup, legacySignals, verifyArchive,
+};
+
+// CLI 로 직접 실행될 때만 전역 상태를 건드린다. bin/crew.cjs 가 이 파일을 require 하므로
+// 최상위에서 uncaughtException 을 잡으면 설치자 전체의 오류 계약(`Crew installer: …`,
+// exit err.exitCode||1)이 이 파일의 것(`legacy-backup: …`, exit 2)으로 바뀐다.
+// argv 파싱도 마찬가지다 — require 시점에 crew.cjs 의 `--project` 를 보고 죽는다.
+if (require.main === module) {
+  // 마지막 그물. flushPendingActions()는 fail() 안에서만 도는데, 네이티브 예외
+  // (EISDIR/ENOENT/EACCES…)는 fail()을 거치지 않고 프로세스를 끝낸다 — 그러면 exit 1
+  // (계약은 2)에 stdout은 비어 있고, 원본을 옮겨둔 ~/.crew-legacy-rollback-XXXXXX
+  // 위치가 어디에도 안 나온다. 홈을 이미 교체한 뒤라면 그게 유일한 단서다. fail() 이
+  // throw 로 바뀌었으므로(R1) 여기서도 명시적으로 flush·cleanup 한 뒤 종료 코드를 살린다.
+  process.on('uncaughtException', (e) => {
+    flushPendingActions();
+    cleanup();
+    process.stderr.write(`legacy-backup: ${(e && e.message) || e}\n`);
+    process.exit((e && e.exitCode) || 2);
+  });
+
+  const opts = parseArgs(process.argv.slice(2));
+  if (opts.command === 'detect') detect(opts);            // Task 3 — 여기서 빠뜨리면 Task 9 Step 1이 죽는다
+  else if (opts.command === 'backup') backup(opts);
+  else if (opts.command === 'verify') verify(opts);
+  else if (opts.command === 'restore') restore(opts);
+  else fail('usage: legacy-backup.cjs detect [--root DIR] | backup [--root DIR] [--dest DIR] | ' +
+    'verify --from DIR | restore --from DIR [--root DIR] [--dry-run] [--allow-foreign-home]', 2);
+}
