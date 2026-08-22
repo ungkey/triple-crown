@@ -14,7 +14,7 @@ def run(cmd,cwd,env=None):
     return p
 
 def prepare():
-    root=Path(tempfile.mkdtemp(prefix="tc-npx-release-"))
+    root=Path(tempfile.mkdtemp(prefix="crew-npx-release-"))
     home=root/"home"; home.mkdir()
     project=root/"project"; project.mkdir()
     run(["git","init","-q"],project)

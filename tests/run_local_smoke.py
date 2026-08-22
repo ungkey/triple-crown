@@ -21,7 +21,7 @@ def assert_(v,msg):
     if not v: raise AssertionError(msg)
 
 def repo():
-    root=Path(tempfile.mkdtemp(prefix="tc-v05-"))
+    root=Path(tempfile.mkdtemp(prefix="crew-v05-"))
     git(root,"init","-q")
     git(root,"config","user.email","test@example.com")
     git(root,"config","user.name","TC Test")

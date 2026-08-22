@@ -34,7 +34,7 @@ yarn-error.log*
 # 뒤 배포한다"는 평범한 릴리스 순서 자체가 막혀 있었다. 실패 조사 시 볼 파일이라
 # 경로는 그대로 두고 추적만 뗀다(e2e/ACCEPTANCE-RUNBOOK.md 참조).
 e2e/E2E-RESULT.json
-tc-installer-*/
+crew-installer-*/
 tmp/
 *.tmp
 coverage/

@@ -13,7 +13,7 @@ def run(cmd,cwd,env=None,ok=True):
     return p
 
 def fixture():
-    root=Path(tempfile.mkdtemp(prefix="tc-installer-"))
+    root=Path(tempfile.mkdtemp(prefix="crew-installer-"))
     home=root/"home"; home.mkdir()
     project=root/"project"; project.mkdir()
     run(["git","init","-q"],project)
