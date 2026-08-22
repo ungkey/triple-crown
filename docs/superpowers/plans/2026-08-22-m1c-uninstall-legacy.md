@@ -12,6 +12,10 @@
 
 **선행 계획:** [`2026-08-21-m1b-capability-split.md`](2026-08-21-m1b-capability-split.md) — 완료. 태그 `v0.7.0-m1b`. 그 계획서의 "범위 밖으로 남긴 것" 절이 M1c 소유로 지정한 3건이 이 계획의 Task 4·5·6 이다.
 
+> **리뷰 반영 필독:** 이 계획은 `/plan-eng-review` 를 거쳤다. Task 1~7 본문을 실행하기 전에
+> **[리뷰 반영 — 확정 변경](#리뷰-반영--확정-변경-2026-08-22-plan-eng-review)** 절(R1~R12)을 먼저 읽는다.
+> 충돌하면 그 절이 이긴다. 특히 R1·R3·R10 은 각각 Task 1·2·5 를 **초록으로 만들 수 없게 하는** 결함이다.
+
 ## Global Constraints
 
 - 외부 npm 의존성 추가 금지. `package.json` 에 `dependencies` 없음 유지.
@@ -1628,6 +1632,532 @@ git status --short; echo "(끝 — 비어 있어야 한다)"
 - **`gsd-core` 의 단일 항목 capMap 을 상류에 보고.** 소유자: 사용자.
 - **`uninstall-legacy` 의 실사용 검증.** 이 머신에 레거시가 없어 픽스처로만 검증한다. 실제 구 설치본이 남은 머신을 만나면 그때가 첫 실전이다. 소유자: 사용자(그런 머신을 만났을 때).
 
+## 리뷰 반영 — 확정 변경 (2026-08-22 `/plan-eng-review`)
+
+> **실행자 필독.** 아래 12건은 리뷰에서 확정된 변경이다. 위 Task 1~7 본문과 충돌하면
+> **이 절이 이긴다.** 각 항목에 소속 태스크를 적었다.
+
+### R1 (Task 1) — `legacy-backup.cjs` 의 `fail()` 을 던지게 바꾼다
+
+`fail()` 은 `process.exit()` 한다([`:46`](../../../scripts/legacy-backup.cjs#L46)). 그래서 Task 2 의
+`checkBackup` 이 `verifyArchive` 를 `try/catch` 로 감싸도 아무것도 못 잡는다 — 손상된
+`archive.tar.gz` 는 [`extractArchive:262`](../../../scripts/legacy-backup.cjs#L262) 에서
+`fail('tar extract failed: …', 2)` 로 **프로세스를 끝낸다.** `node:test` 워커가 통째로 죽어
+`# fail 1` 이 아니라 파일 크래시가 난다. 라이브러리 호출에서 도달하는 `process.exit` 는 넷:
+`extractArchive:262` · `verifyArchive:268` · `verifyArchive:270` ·
+`extractHookGroup:184`(`opts.tolerant` 로 막히지 **않는다**).
+
+`bin/crew.cjs:30` 과 같은 모양으로 통일한다:
+
+```js
+function fail(msg, code = 1) {
+  const e = new Error(msg);
+  e.exitCode = code;
+  throw e;
+}
+```
+
+Task 1 Step 3 의 `require.main` 블록이 CLI 계약을 그대로 재현한다:
+
+```js
+if (require.main === module) {
+  process.on('uncaughtException', (e) => {
+    flushPendingActions();
+    cleanup();
+    process.stderr.write(`legacy-backup: ${(e && e.message) || e}\n`);
+    process.exit((e && e.exitCode) || 2);
+  });
+  const opts = parseArgs(process.argv.slice(2));
+  ...
+}
+```
+
+> `fail()` 안에서 돌던 `flushPendingActions()`·`cleanup()` 이 핸들러로 옮겨간다.
+> **그 두 줄을 빠뜨리면** `restore` 가 홈을 교체한 뒤 죽었을 때 롤백 디렉터리 위치가
+> 어디에도 안 나온다 — [`:52`](../../../scripts/legacy-backup.cjs#L52) 주석이 말하는 그 사고다.
+> `legacy-backup.test.cjs`(842줄)가 종료 코드와 stdout 을 둘 다 단언하므로 어긋나면 즉시 빨개진다.
+
+**추가 테스트** (`legacy-module.test.cjs`, Task 1 Step 1 에 붙인다):
+
+```js
+test('library calls throw instead of exiting the host process', () => {
+  const probe = `
+    const legacy = require(${JSON.stringify(MODULE)});
+    let thrown = null;
+    try { legacy.verifyArchive('/definitely/not/a/backup'); }
+    catch (e) { thrown = { message: e.message, exitCode: e.exitCode }; }
+    console.log(JSON.stringify({ thrown, alive: true }));
+  `;
+  const r = cp.spawnSync(process.execPath, ['-e', probe], { encoding: 'utf8', timeout: 30000 });
+  assert.strictEqual(r.status, 0,
+    'verifyArchive must not end the process — checkBackup depends on catching this');
+  const out = JSON.parse(r.stdout);
+  assert.ok(out.thrown, 'verifyArchive must throw on a missing MANIFEST.json');
+  assert.strictEqual(out.thrown.exitCode, 2, 'the CLI exit code must survive as e.exitCode');
+});
+```
+
+### R2 (Task 1) — `restore` 의 루트는 `:524` 한 줄이 정한다
+
+`restore()` 안에서 `home` 은 **8곳**에 쓰인다: `:524` 선언 · `:531` `assertRestoreHome` ·
+`:540-541` 탈출 검사 · `:571` 표시 · `:576` `applyRestore` · `:578` `restoreClaudeMd` ·
+`:579` `restoreSettings`. 계획서 Task 1 Step 4 는 `assertRestoreHome` 하나만 지목했다.
+그것만 고치면 **프로젝트 루트로 검증하고 `$HOME` 에 쓴다.** 고칠 곳은 선언 한 줄이다:
+
+```js
+function restore(opts) {
+  const home = opts.root ? path.resolve(opts.root) : os.homedir();
+```
+
+나머지 7곳은 그대로 따라온다. **개별로 고치지 않는다.**
+
+**추가 테스트** (`legacy-module.test.cjs`):
+
+```js
+test('restore --root writes into that root and leaves $HOME untouched', () => {
+  const proj = mkFakeHome();
+  const home = mkFakeHome();                       // 대조군 — 한 바이트도 안 바뀌어야 한다
+  const dest = path.join(tempDir('crew-restore-'), 'out');
+  assert.strictEqual(cp.spawnSync(process.execPath,
+    [MODULE, 'backup', '--root', proj, '--dest', dest], { encoding: 'utf8', timeout: 60000 }).status, 0);
+
+  fs.rmSync(path.join(proj, '.triple-crown'), { recursive: true, force: true });
+  const homeBefore = fs.readFileSync(path.join(home, 'CLAUDE.md'), 'utf8');
+
+  const r = cp.spawnSync(process.execPath, [MODULE, 'restore', '--from', dest, '--root', proj], {
+    encoding: 'utf8', timeout: 60000,
+    env: { ...process.env, HOME: home, USERPROFILE: home },
+  });
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  assert.ok(fs.existsSync(path.join(proj, '.triple-crown', 'VERSION')), 'restored into --root');
+  assert.strictEqual(fs.readFileSync(path.join(home, 'CLAUDE.md'), 'utf8'), homeBefore,
+    '$HOME must be untouched when --root points elsewhere');
+});
+```
+
+### R3 (Task 1·Task 2) — 개명 펜스 허용목록을 파일 만드는 태스크에서 각각 닫는다
+
+[`brand-names.test.cjs:13`](../../../e2e/contract/brand-names.test.cjs#L13) 의 `LEGACY` 정규식이
+`triple-crown|triple-gstack|…|Triple\s+Crown` 을 잡고, `ALLOW`(`:18`)에 없는 추적 파일에 그
+토큰이 있으면 L1 이 빨개진다. 옆 테스트 `'the allowlist is alive'`(`:84`)는 **허용목록의 모든
+항목이 실제로 레거시 이름을 가질 것**을 요구하므로 아직 없는 파일을 미리 넣을 수 없다.
+
+- **Task 1 Step 7 커밋 전**: `ALLOW` 에 `'e2e/contract/legacy-module.test.cjs'` 추가.
+  `git add` 에 `e2e/contract/brand-names.test.cjs` 포함.
+- **Task 2 Step 5 커밋 전**: `ALLOW` 에 `'e2e/contract/uninstall-legacy.test.cjs'` 추가.
+  `git add` 에 `e2e/contract/brand-names.test.cjs` 포함.
+- **`scripts/uninstall-legacy.cjs` 는 허용목록에 넣지 않는다.** 대신 헤더 주석에서
+  `Triple Crown` 표현을 뺀다(`개명 전 설치본의 제거.`). 그 파일이 레거시 어휘를 하나도 갖지
+  않는다는 것이 이 계획의 아키텍처 주장 그 자체다 — 허용목록에 넣으면 그 주장을 스스로 판다.
+- `e2e/contract/capability-atomicity.test.cjs` 는 레거시 토큰이 없다. 허용목록 불필요.
+
+### R4 (Task 3) — `findMarkerRange` 의 `-1` 센티넬을 호출부에서 막는다
+
+[`findMarkerRange:121`](../../../scripts/legacy-backup.cjs#L121) 은 `findIndex` 두 번을 그대로
+돌려준다 — **`null` 을 반환하는 경로가 없다.** 마커가 없으면 `{start:-1, end:-1}` 이다.
+Task 1 Interfaces 의 `findMarkerRange, // (lines) -> {start,end}|null` 에서 `|null` 을 지운다.
+`applyRemoval` 의 `if (range)` 는 언제나 참이라 `splice(-1, 1)` 이 **CLAUDE.md 의 마지막 줄을
+지운다.**
+
+또한 `extractFragment:145` 의 `startLine`/`endLine` 은 **1-기반**, `findMarkerRange` 는
+**0-기반**이다. `applyRemoval` 은 `findMarkerRange` 쪽을 쓴다 — `plan.routingBlock.startLine` 을
+`splice` 에 넣지 않는다.
+
+### R5 (Task 3) — 라우팅 블록을 **전부** 지우고 사후 0건을 단언한다
+
+`findMarkerRange` 는 첫 쌍만 본다. 블록이 둘이면 하나만 지우고 "제거 완료"를 출력한다.
+R4 와 합쳐 `applyRemoval` 의 5번 단계를 이 형태로 쓴다:
+
+```js
+  // 5. CLAUDE.md 의 마커 블록 — 마커 쌍 사이만. 밖은 사용자 것이다.
+  //    findMarkerRange 는 첫 쌍만 보고, 없으면 {start:-1,end:-1} 을 준다(null 아님).
+  //    두 사실 중 하나라도 놓치면 사용자 문서가 잘리거나 레거시가 남는다.
+  if (plan.routingBlock) {
+    say('remove every managed-routing block from CLAUDE.md');
+    if (!dry) {
+      const p = abs('CLAUDE.md');
+      const lines = fs.readFileSync(p, 'utf8').split('\n');
+      let removed = 0;
+      for (;;) {
+        const { start, end } = legacy.findMarkerRange(lines);
+        if (start === -1 || end === -1 || end < start) break;
+        lines.splice(start, end - start + 1);
+        removed += 1;
+      }
+      const text = lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd();
+      if (text) fs.writeFileSync(p, text + '\n');
+      else fs.rmSync(p, { force: true });
+      // 사후 조건: 이 명령이 "제거 완료"라고 말하면 마커는 0개다.
+      if (removed === 0) failures.push('CLAUDE.md: routing block vanished between plan and apply');
+      if (fs.existsSync(p) &&
+          legacy.findMarkerRange(fs.readFileSync(p, 'utf8').split('\n')).start !== -1) {
+        failures.push('CLAUDE.md: a managed-routing marker survived removal');
+      }
+    }
+  }
+```
+
+**추가 테스트 2건** (`uninstall-legacy.test.cjs`). `ROUTING_BLOCK` 은
+[`helpers/fake-home.cjs`](../../../e2e/contract/helpers/fake-home.cjs) 가 이미 export 한다:
+
+```js
+test('two legacy routing blocks are both removed and nothing survives', () => {
+  const root = mkFakeHome();
+  const p = path.join(root, 'CLAUDE.md');
+  fs.writeFileSync(p, fs.readFileSync(p, 'utf8') + '\n' + ROUTING_BLOCK + '\ntail line\n');
+  const from = mkBackup(root);
+  const r = runCli(['uninstall-legacy', '--project', root, '--from', from, '--yes']);
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  const md = fs.readFileSync(p, 'utf8');
+  assert.ok(!md.includes('triple-crown:managed-routing'), 'no marker may survive');
+  assert.ok(!md.includes('routing body line'), 'the block body must go with the markers');
+  assert.ok(md.includes('user line kept') && md.includes('tail line'), 'user content on both sides');
+});
+
+test('the marker range guard tolerates a CLAUDE.md that lost its markers mid-flight', () => {
+  const { planRemoval, applyRemoval } = require(path.join(ROOT, 'scripts', 'uninstall-legacy.cjs'));
+  const root = mkFakeHome();
+  const plan = planRemoval(root);
+  assert.ok(plan.routingBlock, 'fixture must start with a routing block');
+  // plan 과 apply 사이에 사용자가 손으로 블록을 지웠다.
+  fs.writeFileSync(path.join(root, 'CLAUDE.md'), 'only a user line\n');
+  const res = applyRemoval(plan, { runner: null, scope: 'project', run: () => ({ code: 0 }) });
+  assert.strictEqual(fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf8'), 'only a user line\n',
+    'splice(-1, 1) must never reach the file');
+  assert.ok(res.failures.some((f) => f.includes('vanished')), res.failures.join('\n'));
+});
+```
+
+### R6 (Task 3) — settings.json 은 **훅 단위**로 걷어내고 빈 그룹만 버린다
+
+계획서의 `pre.filter((g) => !legacy.hasShipGuardGroup(g))` 는 그룹 안에 레거시 훅이 하나라도
+있으면 **그룹 전체**를 버린다 — 같은 그룹의 사용자 훅이 함께 사라진다. 4번 단계를 바꾼다:
+
+```js
+  // 4. settings.json 의 훅 — 정체로 찾는다. 인덱스를 참조하지 않는다.
+  //    그룹째 버리면 같은 그룹을 공유하는 사용자 훅이 함께 사라진다. 훅만 뺀다.
+  if (plan.settingsGroup) {
+    say('remove the legacy ship-guard hook from .claude/settings.json');
+    if (!dry) {
+      const p = abs('.claude/settings.json');
+      const settings = JSON.parse(fs.readFileSync(p, 'utf8'));
+      const pre = settings.hooks && settings.hooks.PreToolUse;
+      if (Array.isArray(pre)) {
+        for (const g of pre) {
+          if (!g || !Array.isArray(g.hooks)) continue;
+          g.hooks = g.hooks.filter(
+            (h) => !String((h && h.command) || '').includes(legacy.SHIP_GUARD));
+        }
+        settings.hooks.PreToolUse = pre.filter((g) => Array.isArray(g && g.hooks) && g.hooks.length);
+        if (settings.hooks.PreToolUse.length === 0) delete settings.hooks.PreToolUse;
+        if (Object.keys(settings.hooks).length === 0) delete settings.hooks;
+        fs.writeFileSync(p, JSON.stringify(settings, null, 2) + '\n');
+      }
+    }
+  }
+```
+
+Task 3 Step 1 의 `it removes all six locations and preserves everything else` 픽스처에
+**같은 그룹을 공유하는 사용자 훅**을 심고 보존을 단언한다:
+
+```js
+  // 레거시 가드와 사용자 훅이 같은 그룹에 있다 — 사용자 훅은 살아남아야 한다.
+  settings.hooks.PreToolUse[0].hooks.push({ type: 'command', command: 'node /home/u/shared.cjs' });
+```
+```js
+  const commands = after.hooks.PreToolUse.flatMap((g) => g.hooks.map((h) => h.command));
+  assert.deepStrictEqual(commands.sort(),
+    ['node /home/u/mine.cjs', 'node /home/u/shared.cjs'],
+    'every non-guard hook survives, including one that shared the guard group');
+```
+
+### R7 (Task 3) — `--from` 을 스코프당 하나씩 받는다
+
+`--from` 은 하나인데 `checkBackup` 은 `manifest.home === plan.root` 를 요구한다. 프로젝트와 홈
+양쪽에 레거시가 있으면 **둘 중 하나는 반드시 거부된다** — 빠져나갈 길이 `--skip-backup-check`
+(게이트를 통째로 끄는 것)뿐이다. 플래그를 하나 더 둔다.
+
+`parse()` 기본값에 `fromGlobal:null` 추가, 분기에 한 줄:
+
+```js
+    else if(a==='--from-global') out.fromGlobal=rest.shift()||fail('--from-global requires a path',2);
+```
+
+`uninstallLegacy` 의 스코프 구성:
+
+```js
+  // 기본은 프로젝트. 홈은 --global 을 명시해야 열린다 (D13 재발 방지선).
+  // 두 스코프가 같은 트리를 가리키면(예: --project "$HOME" --global) 한 번만 센다 —
+  // 두 번 계획하면 의미 기반 제거가 두 번 돌고 원장 조작이 겹친다.
+  const scopes=[{root,scope:'project',label:`project ${root}`,from:opts.from}];
+  if(opts.global && path.resolve(os.homedir())!==path.resolve(root)) {
+    scopes.push({root:os.homedir(),scope:'global',label:`home ${os.homedir()}`,from:opts.fromGlobal});
+  }
+```
+
+백업 게이트는 스코프별 `from` 을 쓴다 — `const res=checkBackup(plan,s.from);`.
+거부 메시지는 어느 플래그가 비었는지 지목한다(`project` → `--from`, `global` → `--from-global`).
+
+`help()` 의 Legacy removal options 절:
+
+```
+  --global             Also remove the pre-rename installation from $HOME (default: project only)
+  --from PATH          Backup covering the project-scope removal targets (required)
+  --from-global PATH   Backup covering the home-scope removal targets (required with --global)
+  --skip-backup-check  Remove without verifying the backups (dangerous)
+```
+
+**추가 테스트**:
+
+```js
+test('--global with legacy in both scopes takes one backup per scope', () => {
+  const home = mkFakeHome();
+  const proj = mkFakeHome();
+  const r = runCli(['uninstall-legacy', '--project', proj, '--global', '--yes',
+    '--from', mkBackup(proj), '--from-global', mkBackup(home)], { HOME: home, USERPROFILE: home });
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  assert.ok(!fs.existsSync(path.join(proj, '.triple-crown')), 'project vendor dir');
+  assert.ok(!fs.existsSync(path.join(home, '.triple-crown')), 'home vendor dir');
+});
+```
+
+### R8 (Task 3) — 실패 경로와 탈출구에 테스트를 단다
+
+```js
+test('--skip-backup-check removes without a backup and says so', () => {
+  const root = mkFakeHome();
+  const r = runCli(['uninstall-legacy', '--project', root, '--skip-backup-check', '--yes']);
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stderr, /skip-backup-check/);
+  assert.ok(!fs.existsSync(path.join(root, '.triple-crown')));
+});
+
+test('an unreachable GSD CLI is a reported failure, not a silent skip', () => {
+  const root = mkFakeHome();
+  const from = mkBackup(root);
+  const r = runCli(['uninstall-legacy', '--project', root, '--from', from, '--yes'],
+    { CREW_GSD_BIN: path.join(ROOT, 'tests', 'no-such-gsd.cjs') });
+  assert.strictEqual(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stderr, /capability left registered/);
+  // 원장은 못 건드렸지만 파일 제거는 끝났다 — 재실행하면 원장만 남는다.
+  assert.ok(!fs.existsSync(path.join(root, '.triple-crown')));
+});
+
+test('a failing capability remove is surfaced with the id that failed', () => {
+  const { planRemoval, applyRemoval } = require(path.join(ROOT, 'scripts', 'uninstall-legacy.cjs'));
+  const root = mkFakeHome();
+  const res = applyRemoval(planRemoval(root), {
+    runner: { display: 'stub', cmd: 'stub', prefix: [] },
+    scope: 'project',
+    run: (_r, args) => args[2] === 'triple-superpowers'
+      ? { code: 1, stdout: '', stderr: 'ledger is locked' }
+      : { code: 0, stdout: '', stderr: '' },
+  });
+  assert.strictEqual(res.failures.length, 1, res.failures.join('\n'));
+  assert.match(res.failures[0], /triple-superpowers: ledger is locked/);
+});
+```
+
+`resolveGsd` 가 존재하지 않는 `CREW_GSD_BIN` 에 대해 `null` 을 주는지 **Task 3 구현 전에
+확인한다.** `null` 이 아니라 실행 실패하는 runner 를 주면 두 번째 테스트가 세 번째와 같은
+경로를 타므로, 그때는 `runner:null` 을 직접 넣는 단위 테스트로 바꾼다.
+
+### R9 (Task 4) — migrate 뒤 중복 그룹을 접는다
+
+[`:57`](../../../scripts/install-claude-ship-guard.cjs#L57) 의 `migrateLegacyRegistrations` 는 걸리는
+훅을 **제자리에서** 갈아 끼우고, 뒤따르는 검사는 **새 그룹을 push 할지만** 정한다. 구 등록과
+신 등록이 둘 다 있는 트리 — M1a 이후 설치를 한 번 돌린 트리, 오늘 존재하는 유일한 레거시
+상태 — 에서는 이관 뒤 **동일한 그룹이 둘** 남는다. Bash 호출마다 가드가 2회 돈다.
+
+```js
+  migrateLegacyRegistrations(pre, command);
+
+  // 이관은 구 등록의 command 를 새 것으로 바꿀 뿐이다. 신 등록이 이미 있었으면 이제
+  // 동일한 그룹이 둘이고, 아래 push 검사는 "있으니 넣지 않는다"만 할 뿐 하나를 지우지 않는다.
+  const matching = pre.filter(g => sameHookGroup(g, command));
+  if (matching.length > 1) {
+    settings.hooks.PreToolUse = pre.filter(g => !sameHookGroup(g, command) || g === matching[0]);
+  }
+
+  if (!settings.hooks.PreToolUse.some(group => sameHookGroup(group, command))) {
+    settings.hooks.PreToolUse.push({ matcher: 'Bash', hooks: [{ type: 'command', command }] });
+  }
+```
+
+> `pre` 는 `ensureArray` 가 돌려준 **같은 배열 참조**다. 위처럼 `settings.hooks.PreToolUse` 에
+> 새 배열을 대입한 뒤에는 `pre` 를 더 쓰지 않는다. 섞어 쓰면 push 가 버려진 배열로 간다.
+
+**추가 테스트** (`legacy-transition.test.cjs`, Task 4 Step 1 의 반전 테스트 옆에):
+
+```js
+test('a tree carrying both the legacy and the current registration collapses to one group', () => {
+  const proj = tempDir('crew-legacy-transition-');
+  const claudeDir = path.join(proj, '.claude');
+  fs.mkdirSync(claudeDir, { recursive: true });
+  const command = 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/crew-ship-guard.cjs"';
+  fs.writeFileSync(path.join(claudeDir, 'settings.json'), JSON.stringify({
+    hooks: { PreToolUse: [
+      { matcher: 'Bash', hooks: [{ type: 'command',
+        command: 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/triple-crown-ship-guard.cjs"' }] },
+      { matcher: 'Bash', hooks: [{ type: 'command', command }] },
+      { matcher: 'Bash', hooks: [{ type: 'command', command: 'node /home/u/unrelated.cjs' }] },
+    ] },
+  }, null, 2));
+
+  const guardScript = path.join(ROOT, 'scripts', 'install-claude-ship-guard.cjs');
+  const r = cp.spawnSync(process.execPath, [guardScript, proj], { encoding: 'utf8', timeout: 30000 });
+  assert.strictEqual(r.status, 0, r.stderr || r.stdout);
+
+  const settings = JSON.parse(fs.readFileSync(path.join(claudeDir, 'settings.json'), 'utf8'));
+  const commands = settings.hooks.PreToolUse.flatMap((g) => g.hooks.map((h) => h.command));
+  assert.strictEqual(commands.filter((c) => c.includes('ship-guard')).length, 1,
+    'the guard must fire exactly once per Bash call');
+  assert.ok(commands.includes('node /home/u/unrelated.cjs'), 'unrelated hooks survive');
+});
+```
+
+### R10 (Task 5) — 실패 주입을 **한 번만** 발화시킨다
+
+계획서의 `if(process.env.FAKE_GSD_FAIL_INSTALL===m.id)` 는 env 변수라 **같은 실행 내내 계속
+발화한다.** `rollbackCapabilities` 는 `[...touched].reverse()` 로 실패한 id 를 **가장 먼저**
+재설치하므로 그 재설치도 죽어 `stuck` 에 들어간다. 원장 결과는 나머지 3개뿐이고,
+Task 5 Step 2 의 `deepStrictEqual(after, before)` 는 **통과할 수 없다.**
+
+`tests/fake-gsd.cjs` 의 install 분기, `const m=JSON.parse(...)` 바로 아래:
+
+```js
+  // 테스트 전용 실패 주입. 롤백의 재설치까지 죽이면 "이전 세대로 되돌린다"는 계약 자체를
+  // 검증할 수 없으므로 **첫 시도에서만** 발화한다. 마커는 원장 옆에 둔다.
+  if(process.env.FAKE_GSD_FAIL_INSTALL===m.id){
+    const mark=path.join(cwd,'.fake-gsd-failed-once');
+    if(!fs.existsSync(mark)){
+      fs.writeFileSync(mark,m.id+'\n');
+      console.error(`fake-gsd: injected failure installing ${m.id}`); process.exit(1);
+    }
+  }
+```
+
+Task 5 Step 2 의 두 번째 테스트는 baseline 설치 뒤 마커가 없음을 전제한다 — `mkFixture()` 가
+매번 새 임시 트리라 자동으로 만족된다. 같은 픽스처에서 실패를 두 번 재현하려면
+`fs.rmSync(path.join(fx.proj,'.fake-gsd-failed-once'),{force:true})` 를 사이에 넣는다.
+
+### R11 (Task 5) — 되돌리기 실패는 조용히 넘어가지 않는다
+
+계획서의 `rollbackCapabilities` 는 `remove` 가 비-0 이어도 `opts.verbose` 일 때만 경고하고,
+그 뒤 `stuck.length===0` 이면 "되돌렸다"를 출력한다 — **제거가 실패했는데 성공 메시지가 나간다.**
+
+```js
+  for(const id of [...touched].reverse()) {
+    const rem=gsdTry(runner,['capability','remove',id,'--scope','project'],root);
+    // "not installed"는 정상이다(설치 전에 죽은 id). 그 외의 비-0 은 원장이 그대로라는 뜻이다.
+    if(rem.code!==0 && !/not installed/i.test(rem.stderr||rem.stdout||'')) {
+      stuck.push(`${id} (remove: ${(rem.stderr||rem.stdout||'').trim()})`);
+      continue;
+    }
+    if(!hadPrevious) continue;
+    const re=gsdTry(runner,['capability','install',`./.crew/capabilities/${id}`,'--scope','project','--yes'],root);
+    if(re.code!==0) stuck.push(`${id} (reinstall: ${(re.stderr||re.stdout||'').trim()})`);
+  }
+```
+
+**추가 테스트** (`capability-atomicity.test.cjs`) — 복구된 `.crew` 에 그 id 가 없는 경우.
+M1a→M1b 가 capability 를 3→4 로 늘렸고 M2 가 4→5 로 늘린다. 그때 정확히 이 경로를 밟는다:
+
+```js
+test('rollback reports a capability the previous generation never had', () => {
+  const fx = mkFixture();
+  assert.strictEqual(install(fx).status, 0);
+  // 이전 세대에 없던 capability 를 흉내낸다: 복구될 소스에서 마지막 id 를 지운다.
+  fs.rmSync(path.join(fx.proj, '.crew', 'capabilities', CAPABILITIES[3]), { recursive: true, force: true });
+  const r = install(fx, { FAKE_GSD_FAIL_INSTALL: CAPABILITIES[2] });
+  assert.notStrictEqual(r.status, 0);
+  assert.match(r.stdout + r.stderr, /Rollback could not reinstate/,
+    'a capability missing from the restored source must be named, not silently dropped');
+});
+```
+
+> 이 테스트는 `.crew` 를 손으로 건드린다. `prepareStableSource` 가 `dest` 를 `backup` 으로
+> rename 하므로 **다음 install 이 그 훼손된 트리를 backup 으로 삼는다** — 의도한 바다.
+
+### R12 (Task 6) — `.gitignore` 와 Windows 잡
+
+**`tc-` 개명 대상이 하나 빠졌다.** [`.gitignore:37`](../../../.gitignore#L37) 의 `tc-installer-*/` 다.
+[`docs/RENAME-MAP.md:138`](../../RENAME-MAP.md#L138) 이 이 항목을 명시적으로 포함시켰는데
+Task 6 파일 목록에 없고, 검증 grep 의 `--include=*.py --include=*.cjs --include=*.yml` 는
+`.gitignore` 를 보지 않아 **거짓 통과**한다. Step 1 을 이렇게 고친다:
+
+```bash
+sed -i 's/prefix="tc-/prefix="crew-/' \
+  tests/run_bash_installer_smoke.py tests/run_guide_smoke.py \
+  tests/run_npx_tarball_smoke.py tests/run_installer_smoke.py tests/run_local_smoke.py
+sed -i 's|^tc-installer-\*/|crew-installer-*/|' .gitignore
+# 확장자 필터 없이 추적 파일 전체를 본다 — .gitignore 를 빠뜨린 것이 이 검사의 지난 실패다.
+git ls-files -z | xargs -0 grep -n "tc-" -- | grep -v '^docs/'
+```
+
+기대: 마지막 명령이 **빈 출력**. `git add tests/ .gitignore`.
+
+**Windows 잡은 `continue-on-error` 로 넣는다.** 첫 결과를 완료 판정에서 빼기로 한 이상,
+실패하는 잡이 `main` 을 빨갛게 만드는 것은 앞뒤가 안 맞는다. Step 4 의 YAML 은
+**`contract:` 스탠자만** 교체한다 — `jobs:` 부터 붙여넣으면 `smoke` 잡이 사라진다:
+
+```yaml
+  contract:
+    name: contract (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # windows 레그는 아직 한 번도 측정되지 않았다(로컬이 WSL 이라 재현 불가).
+    # 신호는 보되 main 을 빨갛게 만들지 않는다. M1d 가 초록으로 만들고 이 줄을 뗀다.
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      # 외부 의존성이 0개라 lockfile 이 없다 — `npm ci` 는 실패한다. 설치 단계 자체가 없다.
+      - name: shared lib copies are in sync
+        run: node scripts/build-capabilities.cjs --check
+      - name: L1 contract
+        run: npm run test:l1
+```
+
+> **범위 밖으로 기록**: `smoke` 잡은 [`tests/run_guide_smoke.py`](../../../tests/run_guide_smoke.py) 를
+> 돌리지 않는다(5종 + `test:pack` 뿐). Task 6 Step 1 이 그 파일의 접두사를 바꾸는데 CI 는 그
+> 변경을 검증하지 않는다. 기존 공백이고 M1c 에서 고치지 않는다 — 소유자: M1d.
+
+### 테스트 수 재계산
+
+| 태스크 | 계획 | 리뷰 반영 | 누계 |
+|---|---:|---:|---:|
+| 기준 | — | — | 107 |
+| Task 1 | 5 | +2 (R1·R2) = **7** | 114 |
+| Task 2 | 9 | +0 = **9** | 123 |
+| Task 3 | 6 | +6 (R5×2 · R7 · R8×3) = **12** | 135 |
+| Task 4 | 1 | +1 (R9) = **2** | 137 |
+| Task 5 | 3 | +1 (R11) = **4** | 141 |
+
+**Task 3 Step 9 · Task 7 Step 3 의 기대값을 `131` 에서 `141` 로 고친다.**
+R6 은 기존 보존 테스트에 단언을 더하는 것이라 수가 늘지 않고, Task 4 의 반전은 교체다.
+**산술이 안 맞으면 세어 보고 이 표를 고친다 — 맞추려고 테스트를 지우지 않는다.**
+
+### 리뷰에서 확인했지만 M1c 에서 하지 않는 것
+
+- **`checkBackup` 의 내용 일치 검증.** 백업 이후 수정된 대상을 지우면 옛 내용으로 복구된다.
+  해시 일치를 요구하면 백업 직후가 아닌 한 게이트가 절대 안 열려 명령이 못 쓰게 된다.
+  대신 거부·성공 메시지에 `manifest.createdAt` 을 찍는다. 소유자: M1d 재평가.
+- **제거의 트랜잭션화.** `REMOVAL_ORDER`(벤더 트리 마지막)와 백업 안의 `restore.sh` 가
+  현재의 답이다. 완전한 롤백은 M1c 보다 크다. 소유자: M1d.
+- **`rollbackCapabilities` 의 id 별 사전 스냅샷.** `hadPrevious` 는 `.crew` 존재 비트 하나다.
+  이전에 등록돼 있지 않던 id 를 재설치할 수 있다. 소유자: M1d.
+- **`total===0` 일 때 `--from` 미검사.** 지울 것이 없으면 게이트도 없다. 의도된 동작이며
+  `help()` 에 한 줄 적는다.
+- **`detect --root` 출력의 `~/` 접두사.** 프로젝트 루트일 때 거짓말이 된다. 소유자: M1d.
+
+---
+
 ## 자기 검토 기록
 
 계획을 쓰면서 실제로 돌려 확인한 것과, 옮겨 적으며 스스로 잡은 것.
@@ -1647,3 +2177,58 @@ git status --short; echo "(끝 — 비어 있어야 한다)"
 - **`findMarkerRange` 의 인덱스 기준을 확인하지 않고 `splice` 를 썼다.** 0-기반인지 1-기반인지 소스를 열기 전에는 알 수 없고, 틀리면 사용자 문서가 한 줄 잘리거나 마커 한 줄이 남는다. Task 3 Step 3 이 "구현 전에 읽어라"와 함께 추가 단언 한 줄을 지시하는 이유다 — `user line kept` 만으로는 한 줄 어긋남을 못 잡는다.
 
 - **이 명령을 이 머신에 쓰지 않는다.** 실측 레거시 0. 검증은 전부 픽스처다. "홈에서 한 번 돌려 본다" 단계를 넣고 싶은 유혹이 있었지만, 그건 되돌릴 수 없는 실험을 완료 판정에 넣는 것이다.
+
+---
+
+## GSTACK REVIEW REPORT
+
+| Run | Reviewer | Status | Findings |
+|---|---|---|---|
+| 1 | plan-eng-review (Step 0 scope) | complete | 1 (복잡도 게이트 17파일 — 현행 유지로 확정) |
+| 2 | Section 1 Architecture | complete | 3 (R1 `fail()` exit · R7 `--global` 백업 게이트 · R3 개명 펜스) |
+| 3 | Section 2 Code quality | complete | 3 (R4 `findMarkerRange` `-1` · R2 `restore --root` · R9 가드 중복) |
+| 4 | Section 3 Tests | complete | 1 (커버리지 33/47 → 상위 4종 추가 확정) |
+| 5 | Section 4 Performance | complete | 0 (`crew install` 실측 624 ms, L1 3.49s → 약 8~9s) |
+| 6 | Outside voice — Codex (`codex-cli 0.149.0`, high) | complete | 4 신규 (R10 실패 주입 · R6 훅 단위 · R5 블록 중복 · R12 `.gitignore`) |
+
+**계획 대비 실측 대조**: `npm run test:l1` = `tests 107 · pass 107 · fail 0` (계획서 기준점 일치).
+`crew install` (fake-gsd) = 624 ms. `capabilities/` = 312K. GSD `--scope` = `global|project`.
+
+### 확정된 결정 (계획서 「리뷰 반영 — 확정 변경」 절에 전문)
+
+| # | 결정 | 소속 |
+|---|---|---|
+| R1 | `legacy-backup.cjs` 의 `fail()` 을 throw 로, CLI 블록이 catch | Task 1 |
+| R2 | `restore` 루트는 `:524` 선언 한 줄 + 실제 복구 테스트 | Task 1 |
+| R3 | `brand-names.test.cjs` 의 `ALLOW` 를 파일 만드는 태스크에서 각각 갱신 | Task 1·2 |
+| R4 | `findMarkerRange` 의 `-1` 을 호출부에서 명시 검사 | Task 3 |
+| R5 | 라우팅 블록 전부 제거 + 사후 0건 단언 | Task 3 |
+| R6 | settings.json 은 훅 단위 제거, 빈 그룹만 폐기 | Task 3 |
+| R7 | `--from` / `--from-global` 스코프별 백업 + 루트 중복 제거 | Task 3 |
+| R8 | `--skip-backup-check`·runner-null·remove-비0 경로에 테스트 | Task 3 |
+| R9 | migrate 뒤 중복 그룹 접기 + 구·신 동시 등록 픽스처 | Task 4 |
+| R10 | `FAKE_GSD_FAIL_INSTALL` 을 첫 시도에서만 발화 | Task 5 |
+| R11 | 롤백의 remove 실패를 failures 로 계상 + stuck 테스트 | Task 5 |
+| R12 | `.gitignore` 의 `tc-installer-*/` + Windows `continue-on-error` | Task 6 |
+
+**차단 결함 3건** — 반영 전 계획대로 실행하면 초록에 도달할 수 없다:
+R1 (Task 2 Step 4 `# pass 9` 불가), R3 (Task 1 Step 5 L1 불가), R10 (Task 5 Step 2 단언 불가).
+
+**테스트 수**: 107 → **141** (Task 1: 7 · Task 2: 9 · Task 3: 12 · Task 4: 2 · Task 5: 4).
+계획서 원안의 `131` 은 「리뷰 반영」 절의 재계산표로 대체한다.
+
+**커버리지**: 33/47 (70%) → 반영 후 **42/47 (89%)**. 잔여 5건은 「M1c 에서 하지 않는 것」에 소유자 기록.
+
+**테스트 플랜 산출물**: `~/.gstack/projects/ungkey-triple-crown/dev-main-eng-review-test-plan-20260822-164046.md`
+
+### CROSS-MODEL 흡수
+
+Codex 지적 10건 중 4건을 확정 변경으로 흡수(R5·R6·R10·R12), 4건을 「M1c 에서 하지 않는 것」에
+소유자와 함께 기록(`checkBackup` 내용 일치 · 비-트랜잭션 제거 · id 별 스냅샷 · `total===0` 게이트 우회),
+1건은 리뷰가 이미 잡은 것과 동일(루트 중복 → R7 에 흡수), 1건은 Windows CI 로 결정 반영(R12).
+남은 교차 모델 이견 없음.
+
+**VERDICT: APPROVED WITH CHANGES** — R1~R12 를 반영한 뒤 실행 가능. 반영 없이 착수하면
+Task 1·2·5 가 각각 자기 완료 조건에 도달하지 못한다.
+
+NO UNRESOLVED DECISIONS
