@@ -85,4 +85,97 @@ function checkBackup(plan, from) {
   return { ok: problems.length === 0, problems };
 }
 
-module.exports = { planRemoval, checkBackup, REMOVAL_ORDER };
+// 제거를 실제로 수행한다. 순서는 REMOVAL_ORDER — 복구의 역순이다.
+// SEMANTIC 대상(CLAUDE.md · settings.json)은 통째로 지우지 않는다. 마커 쌍 사이,
+// 훅 하나만 걷어낸다 (설계 §2.2 2번·4번, §2.5.1 과 같은 원리 — 위치가 아니라 정체).
+function applyRemoval(plan, opts = {}) {
+  const actions = [];
+  const failures = [];
+  const dry = !!opts.dryRun;
+  const say = (m) => actions.push((dry ? '[dry-run] ' : '') + m);
+  const abs = (rel) => path.join(plan.root, rel);
+
+  // 1. capability 원장. 디스크를 손으로 지우지 않는다 — 원장과 디스크가 어긋나면
+  //    다음 설치가 "등록돼 있다는데 파일이 없다"는 상태를 만난다.
+  for (const id of plan.capabilities) {
+    if (!opts.runner) {
+      failures.push(`${id}: GSD CLI unavailable — capability left registered`);
+      continue;
+    }
+    say(`capability remove ${id} (--scope ${opts.scope})`);
+    if (dry) continue;
+    const r = opts.run(opts.runner, ['capability', 'remove', id, '--scope', opts.scope], plan.root);
+    if (r.code !== 0) failures.push(`${id}: ${(r.stderr || r.stdout || '').trim()}`);
+  }
+
+  // 2. 스킬 디렉터리
+  for (const rel of plan.skills) {
+    say(`remove ${rel}`);
+    if (!dry) fs.rmSync(abs(rel), { recursive: true, force: true });
+  }
+
+  // 3. 훅 파일
+  if (plan.hookFile) {
+    say(`remove ${plan.hookFile}`);
+    if (!dry) fs.rmSync(abs(plan.hookFile), { force: true });
+  }
+
+  // 4. settings.json 의 훅 — 정체로 찾는다. 인덱스를 참조하지 않는다.
+  //    그룹째 버리면 같은 그룹을 공유하는 사용자 훅이 함께 사라진다. 훅만 뺀다.
+  if (plan.settingsGroup) {
+    say('remove the legacy ship-guard hook from .claude/settings.json');
+    if (!dry) {
+      const p = abs('.claude/settings.json');
+      const settings = JSON.parse(fs.readFileSync(p, 'utf8'));
+      const pre = settings.hooks && settings.hooks.PreToolUse;
+      if (Array.isArray(pre)) {
+        for (const g of pre) {
+          if (!g || !Array.isArray(g.hooks)) continue;
+          g.hooks = g.hooks.filter(
+            (h) => !String((h && h.command) || '').includes(legacy.SHIP_GUARD));
+        }
+        settings.hooks.PreToolUse = pre.filter((g) => Array.isArray(g && g.hooks) && g.hooks.length);
+        if (settings.hooks.PreToolUse.length === 0) delete settings.hooks.PreToolUse;
+        if (Object.keys(settings.hooks).length === 0) delete settings.hooks;
+        fs.writeFileSync(p, JSON.stringify(settings, null, 2) + '\n');
+      }
+    }
+  }
+
+  // 5. CLAUDE.md 의 마커 블록 — 마커 쌍 사이만. 밖은 사용자 것이다.
+  //    findMarkerRange 는 첫 쌍만 보고, 없으면 {start:-1,end:-1} 을 준다(null 아님).
+  //    두 사실 중 하나라도 놓치면 사용자 문서가 잘리거나 레거시가 남는다.
+  if (plan.routingBlock) {
+    say('remove every managed-routing block from CLAUDE.md');
+    if (!dry) {
+      const p = abs('CLAUDE.md');
+      const lines = fs.readFileSync(p, 'utf8').split('\n');
+      let removed = 0;
+      for (;;) {
+        const { start, end } = legacy.findMarkerRange(lines);
+        if (start === -1 || end === -1 || end < start) break;
+        lines.splice(start, end - start + 1);
+        removed += 1;
+      }
+      const text = lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd();
+      if (text) fs.writeFileSync(p, text + '\n');
+      else fs.rmSync(p, { force: true });
+      // 사후 조건: 이 명령이 "제거 완료"라고 말하면 마커는 0개다.
+      if (removed === 0) failures.push('CLAUDE.md: routing block vanished between plan and apply');
+      if (fs.existsSync(p) &&
+          legacy.findMarkerRange(fs.readFileSync(p, 'utf8').split('\n')).start !== -1) {
+        failures.push('CLAUDE.md: a managed-routing marker survived removal');
+      }
+    }
+  }
+
+  // 6. 벤더 디렉터리 — 마지막. 여기까지 오면 나머지는 이미 사라졌다.
+  if (plan.vendorDir) {
+    say(`remove ${plan.vendorDir}`);
+    if (!dry) fs.rmSync(abs(plan.vendorDir), { recursive: true, force: true });
+  }
+
+  return { actions, failures };
+}
+
+module.exports = { planRemoval, checkBackup, applyRemoval, REMOVAL_ORDER };

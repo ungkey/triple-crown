@@ -92,7 +92,8 @@ function parse(argv) {
   const out={
     command:'install', project:null, yes:false, bootstrap:true,
     routing:true, shipGuard:true, dryRun:false, strict:false, json:false,
-    verbose:false, allowPrerelease:false
+    verbose:false, allowPrerelease:false,
+    global:false, from:null, fromGlobal:null, skipBackupCheck:false
   };
   const rest=[...argv];
   if(rest.length && !rest[0].startsWith('-')) out.command=rest.shift();
@@ -110,6 +111,10 @@ function parse(argv) {
     else if(a==='--json') out.json=true;
     else if(a==='--verbose'||a==='-v') out.verbose=true;
     else if(a==='--allow-prerelease') out.allowPrerelease=true;
+    else if(a==='--global') out.global=true;
+    else if(a==='--from') out.from=rest.shift()||fail('--from requires a path',2);
+    else if(a==='--from-global') out.fromGlobal=rest.shift()||fail('--from-global requires a path',2);
+    else if(a==='--skip-backup-check') out.skipBackupCheck=true;
     else if(a==='--help'||a==='-h') out.command='help';
     else fail(`unknown option: ${a}`,2);
   }
@@ -675,6 +680,75 @@ async function uninstall(root,opts) {
   if(removedSkills.length) log(`Removed skills: ${removedSkills.join(', ')}`);
   log(`Crew project integration removed from ${root}`);
 }
+// 개명 전 설치본의 제거. 현행 crew 설치는 건드리지 않는다 — 그건 `crew uninstall` 이다.
+// 판단과 파괴는 scripts/uninstall-legacy.cjs 가 하고, 여기서는 스코프 결정 · 백업 게이트 ·
+// 동의 · 출력만 한다.
+async function uninstallLegacy(root,opts) {
+  const {planRemoval,checkBackup,applyRemoval}=
+    require(path.join(PACKAGE_ROOT,'scripts','uninstall-legacy.cjs'));
+
+  // 기본은 프로젝트. 홈은 --global 을 명시해야 열린다 (D13 재발 방지선).
+  // 두 스코프가 같은 트리를 가리키면(예: --project "$HOME" --global) 한 번만 센다 —
+  // 두 번 계획하면 의미 기반 제거가 두 번 돌고 원장 조작이 겹친다.
+  const scopes=[{root,scope:'project',label:`project ${root}`,from:opts.from}];
+  if(opts.global && path.resolve(os.homedir())!==path.resolve(root)) {
+    scopes.push({root:os.homedir(),scope:'global',label:`home ${os.homedir()}`,from:opts.fromGlobal});
+  }
+
+  const plans=scopes.map(s=>({...s,plan:planRemoval(s.root)}));
+  const total=plans.reduce((n,p)=>n+p.plan.count,0);
+  if(total===0) { log('nothing to remove: no pre-rename installation found.'); return; }
+
+  // 판정 불가가 하나라도 있으면 파괴 경로에 들어가지 않는다. "모른다"를 "없다"로
+  // 읽는 순간 조용한 누락이 된다.
+  for(const {plan,label} of plans) {
+    if(plan.undetermined.length) {
+      fail(`UNDETERMINED targets under ${label}:\n`+
+        plan.undetermined.map(x=>`  - ${x}`).join('\n')+
+        '\nRemoval refuses to run while anything is undetermined. Inspect those paths by hand first.',2);
+    }
+  }
+
+  if(opts.skipBackupCheck) {
+    warn('--skip-backup-check: removing without verifying that a backup covers these targets.');
+  } else {
+    for(const s of plans) {
+      const {plan,label}=s;
+      if(!plan.count) continue;
+      const res=checkBackup(plan,s.from);
+      if(!res.ok) {
+        const flag=s.scope==='global' ? '--from-global' : '--from';
+        const backupCmd=`node ${path.join(PACKAGE_ROOT,'scripts','legacy-backup.cjs')} backup`+
+          (plan.root===os.homedir()?'':` --root ${plan.root}`);
+        fail(`backup check failed for ${label}:\n`+
+          res.problems.map(x=>`  - ${x}`).join('\n')+
+          `\nTake one first:  ${backupCmd}\n`+
+          `Then re-run with ${flag} <that directory>. Override with --skip-backup-check at your own risk.`,2);
+      }
+    }
+  }
+
+  const actions=plans.filter(p=>p.plan.count)
+    .map(({plan,label})=>`${label}: remove ${plan.count} legacy item(s)`);
+  if(!(await consent(opts,actions))) fail('Legacy removal cancelled.',3);
+
+  const runner=resolveGsd(root);
+  if(!runner) warn('GSD CLI unavailable; capability ledger entries will be reported, not removed.');
+  const failures=[];
+  for(const {plan,scope} of plans) {
+    if(!plan.count) continue;
+    const r=applyRemoval(plan,{runner,scope,dryRun:opts.dryRun,run:gsdTry});
+    for(const a of r.actions) log(a);
+    failures.push(...r.failures);
+  }
+  if(failures.length) {
+    for(const f of failures) warn(f);
+    fail(`legacy removal finished with ${failures.length} failure(s); see the warnings above.`,1);
+  }
+  log(opts.dryRun
+    ? 'dry run complete — nothing was written.'
+    : 'Legacy pre-rename installation removed.');
+}
 function help() {
   log(`Crew Workflow Installer v${VERSION}
 
@@ -683,6 +757,8 @@ Usage:
   crew doctor [--project PATH] [--json]
   crew status [--project PATH]
   crew uninstall [--project PATH] [--yes]
+  crew uninstall-legacy [--project PATH] [--global] --from <backup dir>
+                        [--dry-run] [--skip-backup-check] [--yes]
   crew version
 
 Install options:
@@ -696,6 +772,12 @@ Install options:
   --strict             Reserved for stricter dependency checks
   --verbose, -v        Show more child-process detail
   --allow-prerelease   Install even when VERSION is a prerelease build
+
+Legacy removal options:
+  --global             Also remove the pre-rename installation from $HOME (default: project only)
+  --from PATH          Backup covering the project-scope removal targets (required)
+  --from-global PATH   Backup covering the home-scope removal targets (required with --global)
+  --skip-backup-check  Remove without verifying the backups (dangerous)
 
 Immediate local package usage:
   npx --yes --package ./crew-harness-0.6.5.tgz crew install --yes
@@ -713,6 +795,7 @@ async function main() {
     const d=doctor(root,opts); printDoctor(d,opts.json); process.exitCode=d.ready?0:1; return;
   }
   if(opts.command==='status') return runStatus(root);
+  if(opts.command==='uninstall-legacy') return uninstallLegacy(root,opts);
   if(opts.command==='uninstall') return uninstall(root,opts);
   if(opts.command==='install') return install(root,opts);
   fail(`unknown command: ${opts.command}`,2);
