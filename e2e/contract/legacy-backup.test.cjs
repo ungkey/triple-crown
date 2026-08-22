@@ -840,3 +840,75 @@ test('restore preserves a relative symlink instead of rewriting it to the extrac
   assert.strictEqual(fs.readFileSync(restored, 'utf8'), '0.6.3\n',
     'the restored link must resolve to the restored target');
 });
+
+// --- 최종 전체 리뷰 수정 ------------------------------------------------------
+
+// C1: 프로젝트 백업의 자급식 복구 스크립트가 자기 루트를 몰랐다. --root 없는 restore 는
+// os.homedir() 를 대상으로 삼으므로, 이 스크립트만으로는 복구가 아예 되지 않았고(다른 홈이라
+// exit 4), 그 거부가 권하는 --allow-foreign-home 을 따르면 프로젝트의 설치본이 $HOME 에
+// 쏟아졌다 — 설계 §2.1 의 "백업만으로 복구 가능" 불변식이 정확히 여기서 깨졌다.
+test('a project backup ships a restore.sh that restores that project, not $HOME', (t) => {
+  const proj = mkFakeHome();
+  const home = tempDir('crew-otherhome-');           // 레거시가 없는 별개의 홈
+  const dest = path.join(tempDir('crew-projbackup-'), 'out');
+  const b = runBackupTool(['backup', '--root', proj, '--dest', dest], { HOME: home });
+  assert.strictEqual(b.status, 0, b.stderr);
+
+  const sh = fs.readFileSync(path.join(dest, 'restore.sh'), 'utf8');
+  assert.ok(sh.includes(`--root '${proj}'`), `restore.sh must pin its own root:\n${sh}`);
+
+  if (process.platform === 'win32') { t.skip('restore.sh needs bash'); return; }
+  fs.rmSync(path.join(proj, '.triple-crown'), { recursive: true, force: true });
+  const r = cp.spawnSync('bash', [path.join(dest, 'restore.sh')],
+    { encoding: 'utf8', timeout: 60000, env: { ...process.env, HOME: home, USERPROFILE: home } });
+  assert.strictEqual(r.status, 0, `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`);
+  assert.ok(fs.existsSync(path.join(proj, '.triple-crown/VERSION')),
+    'the backup alone must put the project back');
+  assert.strictEqual(fs.existsSync(path.join(home, '.triple-crown')), false,
+    "a project's pre-rename installation must never land in a home directory");
+});
+
+// C1: 같은 결함의 다른 표면 — 홈에서 project 백업을 restore 하면 거부는 맞지만, 그 거부가
+// 권하는 플래그가 틀렸다. --allow-foreign-home 을 따르면 D13(프로젝트가 글로벌로 붕괴)이
+// 그대로 재현된다. 정답은 --root 다. manifest.scope 의 유일한 소비처이기도 하다.
+test('a project-scope backup refused in a home names --root, not --allow-foreign-home', () => {
+  const proj = mkFakeHome();
+  const home = tempDir('crew-otherhome-');
+  const dest = path.join(tempDir('crew-projbackup-'), 'out');
+  assert.strictEqual(runBackupTool(['backup', '--root', proj, '--dest', dest], { HOME: home }).status, 0);
+
+  const r = runBackupTool(['restore', '--from', dest], { HOME: home });
+  assert.strictEqual(r.status, 4, `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`);
+  assert.ok(r.stderr.includes(`--root ${proj}`), `the refusal must name the right flag:\n${r.stderr}`);
+  assert.doesNotMatch(r.stderr, /Pass --allow-foreign-home only/,
+    'the flag that would pour a project installation into this home must not be recommended');
+  assert.strictEqual(fs.existsSync(path.join(home, '.triple-crown')), false, 'nothing was written');
+});
+
+// I5: R7 은 스코프마다 백업 하나를 요구하고 bin/crew.cjs 는 스코프마다 정확히 이 두 명령을
+// 찍는다. 기본 dest 가 같으면 도구 자신의 안내를 따라가던 사용자가 두 번째 단계에서 막힌다.
+test('a --root backup and a home backup do not fight over the same default destination', () => {
+  const home = mkFakeHome();
+  const proj = mkFakeHome();
+  const first = runBackupTool(['backup', '--root', proj], { HOME: home });
+  assert.strictEqual(first.status, 0, first.stderr);
+  const second = runBackupTool(['backup'], { HOME: home });
+  assert.strictEqual(second.status, 0,
+    `the second command the installer prints must not be blocked by the first:\n${second.stderr}`);
+
+  const dirs = fs.readdirSync(path.join(home, '.crew-legacy-backup')).sort();
+  assert.strictEqual(dirs.length, 2, `two scopes, two destinations, got: ${dirs.join(', ')}`);
+  assert.ok(dirs.some((d) => d.endsWith(`-${path.basename(proj)}`)),
+    `the project destination must carry its root: ${dirs.join(', ')}`);
+});
+
+// 이월 11: HOME 만 넘기면 Windows 의 os.homedir() 는 USERPROFILE 을 보고 **진짜 홈**을
+// 대상으로 삼는다. 이 파일의 호출은 전부 그 모양이었고, 그중 하나(:222)는 진짜
+// non-dry-run restore 다 — 개명 전 설치본이 남은 Windows 개발 머신에서 그 홈을 덮어쓴다.
+test('the fixture helper targets the fake home on every platform, not the real one', () => {
+  const home = mkFakeHome();
+  const r = runBackupTool(['detect'], { HOME: home });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, new RegExp(`^home: ${home.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'),
+    'runBackupTool must mirror HOME into USERPROFILE — os.homedir() reads it on Windows');
+});

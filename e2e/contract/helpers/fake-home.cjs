@@ -43,11 +43,16 @@ function mkFakeHome() {
   return home;
 }
 
+// HOME 만 넘긴 호출은 Windows 에서 픽스처가 아니라 **진짜 홈**을 대상으로 삼는다 —
+// os.homedir() 는 거기서 USERPROFILE 을 본다. 그 홈에 개명 전 설치본이 남아 있으면
+// legacy-backup.test.cjs 의 진짜 non-dry-run restore 가 그것을 덮어쓴다(assertRestoreHome
+// 은 양쪽이 같은 실제 홈으로 풀리므로 통과한다). 호출부 35곳을 고치는 대신 여기서 미러링한다.
+// env 를 뒤에 펴므로 USERPROFILE 을 명시한 호출은 그쪽이 이긴다.
 function runBackupTool(args, env) {
   const script = path.join(__dirname, '..', '..', '..', 'scripts', 'legacy-backup.cjs');
   return cp.spawnSync(process.execPath, [script, ...args], {
     encoding: 'utf8',
-    env: { ...process.env, ...env },
+    env: { ...process.env, ...(env && env.HOME ? { USERPROFILE: env.HOME } : {}), ...env },
   });
 }
 

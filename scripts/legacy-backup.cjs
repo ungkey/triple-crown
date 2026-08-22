@@ -10,6 +10,7 @@ const os = require('os');
 const path = require('path');
 const cp = require('child_process');
 const crypto = require('crypto');
+const { isDeepStrictEqual } = require('util');
 
 const ROUTING_START = '<!-- triple-crown:managed-routing:start -->';
 const ROUTING_END = '<!-- triple-crown:managed-routing:end -->';
@@ -60,6 +61,8 @@ function fail(msg, code = 1) {
 }
 
 function sha256(buf) { return 'sha256:' + crypto.createHash('sha256').update(buf).digest('hex'); }
+// 셸 작은따옴표 인용. 백업 루트에 공백·$·"·백슬래시가 있어도 restore.sh 가 한 낱말로 넘긴다.
+function shQuote(s) { return `'${String(s).replace(/'/g, `'\\''`)}'`; }
 function exists(p) { try { fs.lstatSync(p); return true; } catch { return false; } }
 function readJson(p) { return JSON.parse(fs.readFileSync(p, 'utf8')); }
 
@@ -149,13 +152,19 @@ function extractFragment(root, opts = {}) {
     fragmentSha256: sha256(Buffer.from(fragment)) };
 }
 
+// 훅 **하나**가 ship-guard 인지 보는 단일 술어. 그룹 판정(아래 hasShipGuardGroup)·복구의
+// 재삽입(restoreSettings)·제거(scripts/uninstall-legacy.cjs)가 전부 이것 하나를 쓴다.
+// 갈라지면 제거가 훅 단위로 빼낸 것을 복구가 그룹 단위로 되돌려, 그 그룹을 같이 쓰던
+// 사용자 훅이 두 번 등록된다 (실제로 그랬다 — 최종 리뷰 I4).
+function isShipGuardHook(h) {
+  return String((h && h.command) || '').includes(SHIP_GUARD);
+}
 // ship-guard 훅 그룹인지 판정하는 단일 술어. extractHookGroup(backup)과
 // restoreSettings(restore)가 반드시 같은 판정을 써야 한다 — legacySignals·findMarkerRange를
 // 공유하는 것과 같은 이유다. 갈라지면 restore가 이미 있는 그룹을 못 알아보고 중복 훅 그룹을
 // 덧붙인다.
 function hasShipGuardGroup(g) {
-  return Array.isArray(g && g.hooks) &&
-    g.hooks.some((h) => String((h && h.command) || '').includes(SHIP_GUARD));
+  return Array.isArray(g && g.hooks) && g.hooks.some(isShipGuardHook);
 }
 
 // opts.tolerant: when the file exists but cannot be read or is not valid JSON,
@@ -207,7 +216,13 @@ function backup(opts) {
   // 매니페스트에 남아 restore --root 없이 재생될 때 어느 종류의 백업인지 알려준다.
   const root = opts.root ? path.resolve(opts.root) : os.homedir();
   const scope = opts.root ? 'project' : 'home';
-  const dest = opts.dest || path.join(os.homedir(), '.crew-legacy-backup', localDate());
+  // 기본 dest 는 스코프를 접는다. 접지 않으면 `backup --root <proj>` 와 `backup` 이 같은
+  // 기본 경로를 두고 다투고, 두 번째가 "이미 비어 있지 않다"로 막힌다 — bin/crew.cjs 가
+  // 스코프마다 정확히 그 두 명령을 찍어 주므로, 도구 자신의 안내를 따라 --global 흐름을
+  // 밟는 사용자가 두 번째 단계에서 멈춘다(R7, 최종 리뷰 I5). 홈 스코프의 경로는 설계 §2.1
+  // 런북과 같은 `<YYYY-MM-DD>` 그대로 둔다 — 그 경로를 적어 둔 문서와 테스트가 있다.
+  const dest = opts.dest || path.join(os.homedir(), '.crew-legacy-backup',
+    scope === 'project' ? `${localDate()}-${path.basename(root) || 'root'}` : localDate());
   if (exists(dest) && fs.readdirSync(dest).length) {
     fail(`backup destination already exists and is not empty: ${dest}`, 2);
   }
@@ -253,9 +268,15 @@ function backup(opts) {
   };
   fs.writeFileSync(path.join(dest, 'MANIFEST.json'), JSON.stringify(manifest, null, 2) + '\n');
   fs.copyFileSync(__filename, path.join(dest, 'legacy-backup.cjs'));
+  // 프로젝트 백업의 자급식 복구 스크립트는 자기 루트를 박아 두어야 한다. --root 없는
+  // restore 는 os.homedir() 를 대상으로 삼으므로, 그 없이는 이 스크립트가 프로젝트의
+  // 개명 전 설치본을 $HOME 에 쏟는다 — 설계 §2.1 의 "백업만으로 복구 가능" 불변식이
+  // 정확히 거기서 깨진다(최종 리뷰 C1). "$@" 가 뒤에 오므로 사용자가 --root 를 직접
+  // 넘기면 그쪽이 이긴다(parseArgs 는 마지막 값을 쓴다).
+  const rootArg = scope === 'project' ? ` --root ${shQuote(root)}` : '';
   fs.writeFileSync(path.join(dest, 'restore.sh'),
     '#!/usr/bin/env bash\nset -euo pipefail\nHERE="$(cd "$(dirname "$0")" && pwd -P)"\n' +
-    'exec node "$HERE/legacy-backup.cjs" restore --from "$HERE" "$@"\n',
+    `exec node "$HERE/legacy-backup.cjs" restore --from "$HERE"${rootArg} "$@"\n`,
     { mode: 0o755 });
   log(`backup complete: ${dest}`);
   log(`targets: ${targets.length}, files: ${files.length}`);
@@ -411,14 +432,57 @@ function restoreSettings(home, tmp, from, manifest, actions, dryRun) {
   if (parsed.hooks && parsed.hooks.PreToolUse !== undefined && !Array.isArray(parsed.hooks.PreToolUse)) {
     fail(manual, 3);
   }
+  // 제거가 컨테이너까지 지우고 갔는지 기억해 둔다 — 아래에서 자리까지 되살리기 위해서다.
+  const hadHooks = parsed.hooks !== undefined;
+  const hadPre = !!(parsed.hooks && parsed.hooks.PreToolUse !== undefined);
   parsed.hooks = parsed.hooks || {};
   parsed.hooks.PreToolUse = parsed.hooks.PreToolUse || [];
   const present = parsed.hooks.PreToolUse.some(hasShipGuardGroup);
   if (present) { actions.push('settings.json: ship-guard group already present — no-op'); return; }
   const group = readJson(path.join(from, 'settings.json.hookgroup'));
-  parsed.hooks.PreToolUse.push(group);
-  actions.push('settings.json: reinserted ship-guard hook group (predicate match, appended)');
+  // 제거는 훅 단위다 — 가드 훅만 빼내고 같은 그룹의 사용자 훅은 남긴다. 복구도 훅 단위여야
+  // 왕복이 제자리로 온다: 그룹째 다시 붙이면 그룹에 남아 있던 사용자 훅이 사본으로 함께
+  // 따라와 Bash 호출마다 두 번 돈다(최종 리뷰 I4 의 실측이 정확히 이 모양이다). 백업된
+  // 그룹에서 가드 훅을 뺀 나머지와 **정확히 같은** 그룹이 지금 있으면 그것이 제거가 남긴
+  // 잔해이므로, 원래 인덱스 그대로 가드 훅을 도로 끼워 넣는다. 나머지가 비어 있으면
+  // (가드가 그룹의 전부였으면) 제거가 그룹째 들어냈으므로 예전처럼 그룹을 덧붙인다.
+  const guardIdx = [];
+  const remainder = [];
+  (Array.isArray(group.hooks) ? group.hooks : []).forEach((h, i) => {
+    if (isShipGuardHook(h)) guardIdx.push(i); else remainder.push(h);
+  });
+  const host = remainder.length
+    ? parsed.hooks.PreToolUse.find((g) => g && g.matcher === group.matcher &&
+        Array.isArray(g.hooks) && isDeepStrictEqual(g.hooks, remainder))
+    : null;
+  if (host) {
+    for (const i of guardIdx) host.hooks.splice(i, 0, group.hooks[i]);
+    actions.push('settings.json: reinserted the ship-guard hook into the group it was removed from');
+  } else {
+    parsed.hooks.PreToolUse.push(group);
+    actions.push('settings.json: reinserted ship-guard hook group (predicate match, appended)');
+  }
+  // 제거가 비워서 지운 컨테이너를 되살릴 때는 자리까지 되살린다. JSON.stringify 는 키 삽입
+  // 순서를 그대로 쓰므로 `parsed.hooks = {}` 로 새로 만들면 백업에서 첫 키였던 hooks 가 파일
+  // 끝으로 밀린다 — 가드 훅이 유일한 훅이었던 흔한 트리(제거가 빈 hooks 를 지우고 간다)에서
+  // 바로 그 이유로 왕복이 바이트 동일에서 어긋났다. 되살린 키 하나만 제자리에 끼운다.
+  const template = parseOrNull(backupRaw);
+  if (!hadPre) parsed.hooks = reviveKeyAt(parsed.hooks, 'PreToolUse', template && template.hooks);
+  if (!hadHooks) parsed = reviveKeyAt(parsed, 'hooks', template);
   if (!dryRun) fs.writeFileSync(dst, JSON.stringify(parsed, null, 2) + '\n');
+}
+
+function parseOrNull(buf) { try { return JSON.parse(buf.toString('utf8')); } catch { return null; } }
+// obj 의 key 를 template 이 그 키를 두었던 자리로 옮긴다. 나머지 키의 상대 순서는 그대로다.
+function reviveKeyAt(obj, key, template) {
+  if (!template || typeof template !== 'object' || !(key in template)) return obj;
+  const want = Object.keys(template).indexOf(key);
+  const rest = Object.keys(obj).filter((k) => k !== key);
+  const out = {};
+  for (const k of rest.slice(0, want)) out[k] = obj[k];
+  out[key] = obj[key];
+  for (const k of rest.slice(want)) out[k] = obj[k];
+  return out;
 }
 
 function samePath(a, b) {
@@ -435,6 +499,17 @@ function assertRestoreHome(home, manifest, allowForeignHome) {
     if (!manifest.home) {
       fail('MANIFEST.json has no home field — refusing to restore. Pass --allow-foreign-home ' +
         'only if you are certain this archive belongs on this machine.', 4);
+    }
+    // manifest.scope 의 소비처. 프로젝트 트리에서 뜬 백업은 "다른 홈의 백업"이 아니라
+    // "홈이 아닌 곳의 백업"이고, 정답은 --allow-foreign-home 이 아니라 --root 다. 여기서
+    // --allow-foreign-home 을 권하면 사용자가 프로젝트의 개명 전 설치본을 $HOME 에 쏟아
+    // 머신 전역 ship guard 를 다시 무장시킨다 — 이 마일스톤의 비대칭 기본값(D13)이 막으려던
+    // 바로 그 모양이다. scope 가 없는 옛 백업은 아래 홈 스코프 메시지를 그대로 받는다.
+    if (manifest.scope === 'project') {
+      fail(`this backup was taken from a project tree, not from a home ` +
+        `(manifest.home=${manifest.home}, current restore root=${home}). Restore it into that ` +
+        `tree: add --root ${manifest.home}. Do not pass --allow-foreign-home here — that would ` +
+        `write the project's Triple Crown installation into this home instead.`, 4);
     }
     fail(`this backup was taken from a different home (manifest.home=${manifest.home}, ` +
       `current HOME=${home}). Restoring it here would delete this home's Triple Crown state ` +
@@ -652,7 +727,7 @@ module.exports = {
   ROUTING_START, ROUTING_END, SHIP_GUARD,
   LEGACY_CAPABILITIES, SKILL_MARKERS, LEGACY_SKILL_MARKERS, SEMANTIC, VENDOR_DIR,
   collectTargets, findMarkerRange, extractFragment,
-  hasShipGuardGroup, extractHookGroup, legacySignals, verifyArchive,
+  isShipGuardHook, hasShipGuardGroup, extractHookGroup, legacySignals, verifyArchive,
 };
 
 // CLI 로 직접 실행될 때만 전역 상태를 건드린다. bin/crew.cjs 가 이 파일을 require 하므로
