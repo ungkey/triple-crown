@@ -92,7 +92,8 @@ function parse(argv) {
   const out={
     command:'install', project:null, yes:false, bootstrap:true,
     routing:true, shipGuard:true, dryRun:false, strict:false, json:false,
-    verbose:false, allowPrerelease:false
+    verbose:false, allowPrerelease:false,
+    global:false, from:null, fromGlobal:null, skipBackupCheck:false
   };
   const rest=[...argv];
   if(rest.length && !rest[0].startsWith('-')) out.command=rest.shift();
@@ -110,6 +111,10 @@ function parse(argv) {
     else if(a==='--json') out.json=true;
     else if(a==='--verbose'||a==='-v') out.verbose=true;
     else if(a==='--allow-prerelease') out.allowPrerelease=true;
+    else if(a==='--global') out.global=true;
+    else if(a==='--from') out.from=rest.shift()||fail('--from requires a path',2);
+    else if(a==='--from-global') out.fromGlobal=rest.shift()||fail('--from-global requires a path',2);
+    else if(a==='--skip-backup-check') out.skipBackupCheck=true;
     else if(a==='--help'||a==='-h') out.command='help';
     else fail(`unknown option: ${a}`,2);
   }
@@ -346,13 +351,50 @@ function validateBundledManifests() {
   }
   return true;
 }
-function installCapabilities(root,runner,opts) {
+// 실패한 설치가 남긴 원장을 소스와 같은 세대로 되돌린다.
+//
+// tx.restore() 는 .crew 소스만 되돌리므로 그것만으로는 "원장은 신버전 · 소스는 구버전"인
+// 반쪽 상태가 남는다. 이전 설치본이 있었으면(hadPrevious) 되돌린 소스로 다시 등록하고,
+// 없었으면(fresh) 이번에 손댄 것을 전부 지운다.
+//
+// 이 함수는 던지지 않는다 — 원래 실패를 덮어쓰면 사용자가 진짜 원인을 못 본다.
+// 되돌리기에 실패하면 무엇을 손으로 해야 하는지 알린다.
+function rollbackCapabilities(root,runner,touched,hadPrevious,opts) {
+  if(!touched.length) return;
+  if(!runner) {
+    warn(`Install failed after touching: ${touched.join(', ')}. GSD CLI is unavailable, so the `+
+      'capability ledger could not be rolled back. Re-run `crew install` once GSD is reachable.');
+    return;
+  }
+  const stuck=[];
+  for(const id of [...touched].reverse()) {
+    const rem=gsdTry(runner,['capability','remove',id,'--scope','project'],root);
+    // "not installed"는 정상이다(설치 전에 죽은 id). 그 외의 비-0 은 원장이 그대로라는 뜻이다.
+    if(rem.code!==0 && !/not installed/i.test(rem.stderr||rem.stdout||'')) {
+      stuck.push(`${id} (remove: ${(rem.stderr||rem.stdout||'').trim()})`);
+      continue;
+    }
+    if(!hadPrevious) continue;
+    const re=gsdTry(runner,['capability','install',`./.crew/capabilities/${id}`,'--scope','project','--yes'],root);
+    if(re.code!==0) stuck.push(`${id} (reinstall: ${(re.stderr||re.stdout||'').trim()})`);
+  }
+  if(stuck.length) {
+    warn(`Rollback could not reinstate: ${stuck.join(', ')}. Run \`crew install\` again, or remove `+
+      'them with `gsd-tools capability remove <id> --scope project` and reinstall.');
+  } else {
+    log(hadPrevious
+      ? 'Rolled the capability ledger back to the previously installed generation.'
+      : 'Removed the partially installed capabilities left by the failed run.');
+  }
+}
+function installCapabilities(root,runner,opts,touched=[]) {
   let list=[];
   const before=gsdTry(runner,['capability','list','--scope','project'],root);
   if(before.code===0) list=parseCapabilityList(before.stdout);
   for(const id of CAPABILITIES) {
     const old=list.find(x=>x.id===id && x.scope==='project');
     log(old ? `Refreshing ${id}...` : `Installing ${id}...`);
+    touched.push(id);                       // 여기서부터 이 id 는 이번 실행의 책임이다
 
     // Always attempt removal first. This repairs a prior interrupted install even
     // when `capability list` cannot accurately surface the stale ledger entry.
@@ -629,8 +671,12 @@ async function install(root,opts) {
   }
 
   const tx=prepareStableSource(root);
+  // restore() 가 backup 을 dest 로 rename 하므로 이 값은 반드시 restore 전에 읽어야 한다.
+  // 뒤에 읽으면 항상 false 가 되고, 업그레이드 실패가 롤백 대신 "전부 제거"로 끝난다.
+  const hadPrevious=exists(tx.backup);
+  const touched=[];
   try {
-    const rows=installCapabilities(root,gsd,opts);
+    const rows=installCapabilities(root,gsd,opts,touched);
     const skills=installProjectSkills(root);
     if(opts.routing) installRouting(root);
     if(opts.shipGuard) installShipGuard(root,opts);
@@ -648,7 +694,8 @@ async function install(root,opts) {
     log('Next: restart/reload Claude Code if needed, then run /crew-gsd');
     log('Doctor: npx crew-harness doctor');
   } catch(err) {
-    tx.restore();
+    tx.restore();                                    // 소스를 먼저 되돌린다
+    rollbackCapabilities(root,gsd,touched,hadPrevious,opts);   // 그다음 원장을 맞춘다
     throw err;
   }
 }
@@ -675,6 +722,108 @@ async function uninstall(root,opts) {
   if(removedSkills.length) log(`Removed skills: ${removedSkills.join(', ')}`);
   log(`Crew project integration removed from ${root}`);
 }
+// 개명 전 설치본의 제거. 현행 crew 설치는 건드리지 않는다 — 그건 `crew uninstall` 이다.
+// 판단과 파괴는 scripts/uninstall-legacy.cjs 가 하고, 여기서는 스코프 결정 · 백업 게이트 ·
+// 동의 · 출력만 한다.
+async function uninstallLegacy(root,opts) {
+  const {planRemoval,checkBackup,applyRemoval}=
+    require(path.join(PACKAGE_ROOT,'scripts','uninstall-legacy.cjs'));
+
+  // 기본은 프로젝트. 홈은 --global 을 명시해야 열린다 (D13 재발 방지선).
+  // 두 스코프가 같은 트리를 가리키면(예: --project "$HOME" --global, 또는 심볼릭 링크로
+  // 같은 곳을 도달하는 경우) 한 번만 센다 — realpath 로 비교한다(:81 sameRealPath, install()
+  // 도 :582 에서 같은 이유로 이 술어를 쓴다). 문자열 resolve 비교는 symlink 를 통과한 동일
+  // 트리를 다른 트리로 오판해 같은 홈을 두 번 계획하고 두 번 파괴한다.
+  const scopes=[{root,scope:'project',label:`project ${root}`,from:opts.from}];
+  if(opts.global && !sameRealPath(os.homedir(),root)) {
+    scopes.push({root:os.homedir(),scope:'global',label:`home ${os.homedir()}`,from:opts.fromGlobal});
+  }
+
+  const plans=scopes.map(s=>({...s,plan:planRemoval(s.root)}));
+  const backupCli=path.join(PACKAGE_ROOT,'scripts','legacy-backup.cjs');
+  // 복구 안내는 스코프마다 자기 루트를 들고 있어야 한다. `restore` 의 기본 대상은
+  // os.homedir() 인데 이 명령의 기본 스코프는 프로젝트이므로, --root 를 빼면 안내대로
+  // 따라간 사용자가 프로젝트의 설치본을 홈에 쏟는다(최종 리뷰 C1 의 실측).
+  const restoreCmd=s=>`node ${backupCli} restore --from ${s.from||'<that backup directory>'}`+
+    ` --root ${s.plan.root}`;
+
+  // 판정 불가가 하나라도 있으면 파괴 경로에 들어가지 않는다. "모른다"를 "없다"로
+  // 읽는 순간 조용한 누락이 된다. plan.count 는 판정된 대상만 센다 — undetermined 는
+  // 별도 배열이라 count 에 안 잡힌다. 그래서 이 게이트가 "할 일 없음" 판단보다 먼저 돈다.
+  for(const {plan,label} of plans) {
+    if(plan.undetermined.length) {
+      fail(`UNDETERMINED targets under ${label}:\n`+
+        plan.undetermined.map(x=>`  - ${x}`).join('\n')+
+        '\nRemoval refuses to run while anything is undetermined. Inspect those paths by hand first.',2);
+    }
+  }
+
+  const total=plans.reduce((n,p)=>n+p.plan.count,0);
+  if(total===0) { log('nothing to remove: no pre-rename installation found.'); return; }
+
+  if(opts.skipBackupCheck) {
+    warn('--skip-backup-check: removing without verifying that a backup covers these targets.');
+  } else {
+    for(const s of plans) {
+      const {plan,label}=s;
+      if(!plan.count) continue;
+      const res=checkBackup(plan,s.from);
+      s.createdAt=res.createdAt||null;
+      if(!res.ok) {
+        const flag=s.scope==='global' ? '--from-global' : '--from';
+        const backupCmd=`node ${backupCli} backup`+
+          (plan.root===os.homedir()?'':` --root ${plan.root}`);
+        fail(`backup check failed for ${label}:\n`+
+          res.problems.map(x=>`  - ${x}`).join('\n')+
+          // 읽히기는 한 백업이라면 언제 뜬 것인지 함께 말한다 — 거부의 절반은 "엉뚱한
+          // 백업을 골랐다"이고, 그 판단에 필요한 사실이 시각이다.
+          (res.createdAt?`\nThe backup at ${s.from} was taken ${res.createdAt}.`:'')+
+          `\nTake one first:  ${backupCmd}\n`+
+          `Then re-run with ${flag} <that directory>. Override with --skip-backup-check at your own risk.`,2);
+      }
+    }
+  }
+
+  const actions=plans.filter(p=>p.plan.count)
+    .map(({plan,label})=>`${label}: remove ${plan.count} legacy item(s)`);
+  if(!(await consent(opts,actions))) fail('Legacy removal cancelled.',3);
+
+  const runner=resolveGsd(root);
+  if(!runner) warn('GSD CLI unavailable; capability ledger entries will be reported, not removed.');
+  const failures=[];
+  for(const {plan,scope} of plans) {
+    if(!plan.count) continue;
+    const r=applyRemoval(plan,{runner,scope,dryRun:opts.dryRun,run:gsdTry});
+    for(const a of r.actions) log(a);
+    failures.push(...r.failures);
+  }
+  if(failures.length) {
+    for(const f of failures) warn(f);
+    // 되돌릴 수 있어야 완료다(설계 §2.4). 흔한 사례(GSD 접근 불가)는 파일은 이미
+    // 지워진 채 원장만 남는다 — 이 명령은 멱등이라 원인을 고친 뒤 그대로 다시 돌리면
+    // 남은 것만 마저 처리한다. 전부 되돌리고 싶다면 --from 으로 넘긴 백업이 있다.
+    warn('Recovery: this command is idempotent — fix the cause above (e.g. make GSD reachable '+
+      'again) and re-run it unchanged; it will only touch what is still left. To undo everything '+
+      'instead, restore from backup:');
+    for(const s of plans) {
+      if(!s.plan.count) continue;
+      warn(`  ${s.label}: ${restoreCmd(s)}`+(s.createdAt?`   (backup taken ${s.createdAt})`:''));
+    }
+    fail(`legacy removal finished with ${failures.length} failure(s); see the warnings above.`,1);
+  }
+  log(opts.dryRun
+    ? 'dry run complete — nothing was written.'
+    : 'Legacy pre-rename installation removed.');
+  // 성공했을 때도 되돌리는 길을 남긴다. 이 명령은 되돌릴 수 없고, 이 출력이 나중에 다른
+  // 셸에서 복구를 시도할 때 남아 있는 유일한 단서일 수 있다 — 백업의 시각까지 함께 찍어
+  // 여러 세대 중 어느 것이 이 제거를 덮는지 헷갈리지 않게 한다.
+  if(!opts.dryRun) {
+    for(const s of plans) {
+      if(!s.plan.count||!s.from) continue;
+      log(`  undo ${s.label}: ${restoreCmd(s)}`+(s.createdAt?`   (backup taken ${s.createdAt})`:''));
+    }
+  }
+}
 function help() {
   log(`Crew Workflow Installer v${VERSION}
 
@@ -683,6 +832,8 @@ Usage:
   crew doctor [--project PATH] [--json]
   crew status [--project PATH]
   crew uninstall [--project PATH] [--yes]
+  crew uninstall-legacy [--project PATH] [--global] --from <backup dir>
+                        [--dry-run] [--skip-backup-check] [--yes]
   crew version
 
 Install options:
@@ -696,6 +847,13 @@ Install options:
   --strict             Reserved for stricter dependency checks
   --verbose, -v        Show more child-process detail
   --allow-prerelease   Install even when VERSION is a prerelease build
+
+Legacy removal options:
+  --global             Also remove the pre-rename installation from $HOME (default: project only)
+  --from PATH          Backup covering the project-scope removal targets (required)
+  --from-global PATH   Backup covering the home-scope removal targets (required with --global)
+  --skip-backup-check  Remove without verifying the backups (dangerous)
+  (a tree with nothing to remove exits 0 without checking --from at all)
 
 Immediate local package usage:
   npx --yes --package ./crew-harness-0.6.5.tgz crew install --yes
@@ -713,6 +871,7 @@ async function main() {
     const d=doctor(root,opts); printDoctor(d,opts.json); process.exitCode=d.ready?0:1; return;
   }
   if(opts.command==='status') return runStatus(root);
+  if(opts.command==='uninstall-legacy') return uninstallLegacy(root,opts);
   if(opts.command==='uninstall') return uninstall(root,opts);
   if(opts.command==='install') return install(root,opts);
   fail(`unknown command: ${opts.command}`,2);

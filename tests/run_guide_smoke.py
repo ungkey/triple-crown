@@ -19,7 +19,7 @@ def git(root,*args):
     return p.stdout.strip()
 
 def fixture():
-    root=Path(tempfile.mkdtemp(prefix="tc-guide-"))
+    root=Path(tempfile.mkdtemp(prefix="crew-guide-"))
     git(root,"init","-q")
     git(root,"config","user.email","guide@example.invalid")
     git(root,"config","user.name","Guide Test")

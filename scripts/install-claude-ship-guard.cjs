@@ -12,8 +12,16 @@ function ensureArray(obj, key) {
   if (!Array.isArray(obj[key])) obj[key] = [];
   return obj[key];
 }
+// This script runs as a standalone child process of the installer, so it does not
+// require legacy-backup.cjs. Instead it collects the filenames it must recognise
+// here in one place. Same value as legacy-backup.cjs's SHIP_GUARD; if the two ever
+// drift, the "agree on the old filename" test in e2e/contract/legacy-transition.test.cjs
+// catches it.
+const GUARD_FILENAMES = ['crew-ship-guard.cjs', 'triple-crown-ship-guard.cjs'];
 function isGuardHook(h) {
-  return !!h && h.type === 'command' && String(h.command || '').includes('crew-ship-guard.cjs');
+  if (!h || h.type !== 'command') return false;
+  const cmd = String(h.command || '');
+  return GUARD_FILENAMES.some((name) => cmd.includes(name));
 }
 function sameHookGroup(group, command) {
   if (!group || group.matcher !== 'Bash' || !Array.isArray(group.hooks)) return false;
@@ -55,8 +63,33 @@ try {
 
   migrateLegacyRegistrations(pre, command);
 
-  if (!pre.some(group => sameHookGroup(group, command))) {
-    pre.push({
+  // Migration only swaps the old registration's command for the new one. If the new
+  // registration already existed, the same command is now registered twice, and the push
+  // check below only decides whether to add a group — it does not remove either one.
+  //
+  // Deduplicate by hook, never by discarding a group: a group can hold the user's own
+  // hooks alongside the guard, and a hand-edited settings.json is exactly the shape this
+  // reaches ([{new guard}], [{legacy guard}, {mine.cjs}] -> dropping the second group
+  // silently deletes mine.cjs). uninstall-legacy's removal path is hook-granular for the
+  // same reason. Only a group this loop itself emptied is dropped; an already-empty group
+  // is the user's and stays.
+  let kept = false;
+  const emptied = new Set();
+  for (const group of pre) {
+    if (!sameHookGroup(group, command)) continue;
+    const before = group.hooks.length;
+    group.hooks = group.hooks.filter(h => {
+      if (!h || h.type !== 'command' || h.command !== command) return true;
+      if (kept) return false;
+      kept = true;
+      return true;
+    });
+    if (before > 0 && group.hooks.length === 0) emptied.add(group);
+  }
+  if (emptied.size) settings.hooks.PreToolUse = pre.filter(g => !emptied.has(g));
+
+  if (!settings.hooks.PreToolUse.some(group => sameHookGroup(group, command))) {
+    settings.hooks.PreToolUse.push({
       matcher: 'Bash',
       hooks: [
         {
