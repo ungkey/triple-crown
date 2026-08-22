@@ -154,3 +154,35 @@ test('the installer stays single-marker; dual-marker knowledge lives in the lega
   assert.ok(legacy.SKILL_MARKERS.includes(NEW_MARKER),
     'backup still captures both markers — removal is what narrows to the old one');
 });
+
+// I6: R9 의 dedup 이 중복 그룹을 통째로 버렸다. 좁지만 도달 가능하다 — 구·신 등록이 둘 다
+// 있고, 구 쪽이 사용자 훅과 같은 그룹이며, 현행 등록보다 뒤에 있으면 된다. 그 조합에서
+// 마이그레이션 후 두 그룹이 모두 매치되고, 뒤 그룹이 버려지면서 사용자 훅이 조용히 사라진다.
+// R6 이 제거 경로에서 금지한 바로 그 안티패턴이라 설치 경로도 같은 모양이어야 한다.
+test('deduplication drops the duplicate guard hook, never the group around it', () => {
+  const proj = tempDir('crew-legacy-transition-');
+  const claudeDir = path.join(proj, '.claude');
+  fs.mkdirSync(claudeDir, { recursive: true });
+  const command = 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/crew-ship-guard.cjs"';
+  const legacyCommand = 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/triple-crown-ship-guard.cjs"';
+  fs.writeFileSync(path.join(claudeDir, 'settings.json'), JSON.stringify({
+    hooks: { PreToolUse: [
+      { matcher: 'Bash', hooks: [{ type: 'command', command }] },
+      { matcher: 'Bash', hooks: [
+        { type: 'command', command: legacyCommand },
+        { type: 'command', command: 'node /home/u/mine.cjs' },
+      ] },
+    ] },
+  }, null, 2));
+
+  const guardScript = path.join(ROOT, 'scripts', 'install-claude-ship-guard.cjs');
+  const r = cp.spawnSync(process.execPath, [guardScript, proj], { encoding: 'utf8', timeout: 30000 });
+  assert.strictEqual(r.status, 0, r.stderr || r.stdout);
+
+  const settings = JSON.parse(fs.readFileSync(path.join(claudeDir, 'settings.json'), 'utf8'));
+  const commands = settings.hooks.PreToolUse.flatMap((g) => g.hooks.map((h) => h.command));
+  assert.ok(commands.includes('node /home/u/mine.cjs'),
+    "a hook that shared the duplicate's group must survive deduplication");
+  assert.strictEqual(commands.filter((c) => c.includes('ship-guard')).length, 1,
+    'the guard must still fire exactly once per Bash call');
+});
