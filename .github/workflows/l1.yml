@@ -8,8 +8,15 @@ on:
 
 jobs:
   contract:
-    name: contract (ubuntu)
-    runs-on: ubuntu-latest
+    name: contract (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # windows 레그는 아직 한 번도 측정되지 않았다(로컬이 WSL 이라 재현 불가).
+    # 신호는 보되 main 을 빨갛게 만들지 않는다. M1d 가 초록으로 만들고 이 줄을 뗀다.
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
