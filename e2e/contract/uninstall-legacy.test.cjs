@@ -470,3 +470,192 @@ test('a CLAUDE.md with no trailing newline keeps that property intact after remo
   assert.strictEqual(after, 'intro\n\ntrailer without newline');
   assert.deepStrictEqual(failures, []);
 });
+
+// --- 최종 전체 리뷰 수정 ------------------------------------------------------
+
+const crypto = require('crypto');
+
+// chmod 555 는 root 에게 무효다 — root 로 도는 컨테이너에서는 권한 거부를 실제로 일으킬 수
+// 없으므로 조용한 vacuous pass 대신 명시적 skip 한다 (legacy-backup.test.cjs 와 같은 규약).
+const IS_ROOT = typeof process.getuid === 'function' && process.getuid() === 0;
+const ROOT_SKIP = 'chmod 555 does not deny root — this test needs a non-root uid';
+
+// 트리 전체를 바이트 단위로 찍는다 — 파일 내용의 sha256, 디렉터리, 심볼릭 링크 대상까지.
+// "어떤 문자열이 살아남았다"가 아니라 "왕복이 제자리로 돌아왔다"를 단언하기 위한 것이다.
+function snapshotTree(root, skip = new Set()) {
+  const out = {};
+  (function walk(abs, rel) {
+    for (const e of fs.readdirSync(abs, { withFileTypes: true })
+      .sort((a, b) => (a.name < b.name ? -1 : 1))) {
+      const p = path.join(abs, e.name);
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      if (skip.has(r)) continue;
+      if (e.isSymbolicLink()) out[r] = `symlink:${fs.readlinkSync(p)}`;
+      else if (e.isDirectory()) { out[r] = 'dir'; walk(p, r); }
+      else out[r] = crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+    }
+  })(root, '');
+  return out;
+}
+
+// tests/fake-gsd.cjs 가 cwd 에 쓰는 자기 원장. 진짜 GSD 원장(.gsd/capabilities/*)이 아니라
+// 테스트 러너의 부산물이므로 백업 대상도, 복구 대상도 아니다.
+const FAKE_GSD_LEDGER = '.fake-gsd-capabilities.json';
+
+function roundTrip(root) {
+  const before = snapshotTree(root);
+  const from = mkBackup(root);
+  const removed = runCli(['uninstall-legacy', '--project', root, '--from', from, '--yes']);
+  assert.strictEqual(removed.status, 0, removed.stdout + removed.stderr);
+  assert.ok(!fs.existsSync(path.join(root, '.triple-crown')), 'the removal must actually have run');
+  const restored = cp.spawnSync(process.execPath,
+    [BACKUP_CLI, 'restore', '--from', from, '--root', root], { encoding: 'utf8', timeout: 60000 });
+  assert.strictEqual(restored.status, 0, restored.stdout + restored.stderr);
+  return { before, after: snapshotTree(root, new Set([FAKE_GSD_LEDGER])), from };
+}
+
+// I4 (2): 이 명령의 안전 논거 전체가 "백업 게이트가 있으니 되돌릴 수 있다"인데, 그것을
+// 실제로 끝까지 검증하는 테스트가 브랜치에 하나도 없었다. backup → 제거 → restore --root
+// 를 돌리고 트리가 바이트 동일하게 돌아오는지 본다.
+test('backup, uninstall-legacy and restore round-trip the tree byte-for-byte', () => {
+  const root = mkFakeHome();
+  const { before, after } = roundTrip(root);
+  assert.deepStrictEqual(after, before,
+    'every byte the removal took must come back from the backup it was gated on');
+});
+
+// I4 (1): 제거는 훅 단위(그룹은 남기고 가드 훅만 빼냄)인데 복구가 그룹 단위(보존해 둔 그룹을
+// 통째로 append)였다. 가드와 같은 그룹을 쓰던 사용자 훅이 왕복 후 두 벌이 되어 Bash 호출마다
+// 두 번 돌았다 — R6 이 보호하려고 쓴 바로 그 트리 모양이다.
+test('a guard hook that shared its group round-trips without duplicating the user hook', () => {
+  const root = mkFakeHome();
+  const settingsPath = path.join(root, '.claude', 'settings.json');
+  const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+  settings.hooks.PreToolUse[0].hooks.push({ type: 'command', command: 'node /home/u/shared.cjs' });
+  settings.hooks.PreToolUse.push({
+    matcher: 'Bash', hooks: [{ type: 'command', command: 'node /home/u/mine.cjs' }],
+  });
+  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
+
+  const { before, after } = roundTrip(root);
+  assert.deepStrictEqual(after, before, 'settings.json must come back byte-identical, not re-appended');
+
+  const commands = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+    .hooks.PreToolUse.flatMap((g) => g.hooks.map((h) => h.command));
+  assert.strictEqual(commands.filter((c) => c === 'node /home/u/shared.cjs').length, 1,
+    'the user hook that shared the guard group must run once per Bash call, not twice');
+  assert.strictEqual(commands.filter((c) => c.includes('ship-guard')).length, 1,
+    'exactly one guard registration comes back');
+});
+
+// C1: 이 명령의 기본 스코프는 프로젝트인데 `restore` 의 기본 대상은 os.homedir() 다. 안내에서
+// --root 가 빠지면, 그대로 따라간 사용자가 프로젝트의 개명 전 설치본을 $HOME 에 쏟는다.
+test('the recovery instruction carries the root the removal actually ran against', () => {
+  const root = mkFakeHome();
+  const from = mkBackup(root);
+  const failingGsd = path.join(tempDir('crew-failing-gsd-'), 'failing-gsd.cjs');
+  fs.writeFileSync(failingGsd,
+    "#!/usr/bin/env node\nconsole.error('ledger is locked');\nprocess.exit(1);\n");
+  const r = runCli(['uninstall-legacy', '--project', root, '--from', from, '--yes'],
+    { CREW_GSD_BIN: failingGsd });
+  assert.strictEqual(r.status, 1, r.stdout + r.stderr);
+  assert.ok(r.stderr.includes(`restore --from ${from} --root ${root}`),
+    `the recovery command must name this scope's root:\n${r.stderr}`);
+});
+
+// 이월 12.1: 백업 시각을 거부 메시지와 성공 메시지 양쪽에 찍는다. 백업이 여러 세대 쌓인
+// 홈에서는 경로만으로 "지금 이 제거를 덮는 것"을 못 가린다.
+test('a successful removal prints how to undo it, and when that backup was taken', () => {
+  const root = mkFakeHome();
+  const from = mkBackup(root);
+  const r = runCli(['uninstall-legacy', '--project', root, '--from', from, '--yes']);
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  assert.ok(r.stdout.includes(`restore --from ${from} --root ${root}`),
+    `the success output must name the way back:\n${r.stdout}`);
+  assert.match(r.stdout, /backup taken \d{4}-\d{2}-\d{2}T/, 'with the backup timestamp');
+});
+
+test('the backup-check refusal says when the backup it did read was taken', () => {
+  const root = mkFakeHome();
+  const foreign = mkBackup(mkFakeHome());
+  const r = runCli(['uninstall-legacy', '--project', root, '--from', foreign, '--yes']);
+  assert.strictEqual(r.status, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /was taken \d{4}-\d{2}-\d{2}T/, r.stderr);
+});
+
+// 이월 12.2: docs/RENAME-MAP.md 는 이 사실을 적었지만 help() 는 아니었다.
+test('help says a tree with nothing to remove needs no backup at all', () => {
+  const r = runCli(['help']);
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /nothing to remove/i);
+});
+
+// I2: 제거 도중의 I/O 오류가 던지면 uninstallLegacy 를 통째로 빠져나가 failures 집계도
+// `Recovery:` 블록도 함께 건너뛴다 — 이미 지운 것이 있는데 백업 이야기는 한 마디도 없다.
+// 리뷰어의 실측 3종을 그대로 재현한다.
+test('an I/O error inside a removal step lands in failures instead of escaping', () => {
+  const cases = [
+    ['settings.json deleted', (root) => fs.rmSync(path.join(root, '.claude', 'settings.json')),
+      /settings\.json/],
+    ['settings.json corrupted',
+      (root) => fs.writeFileSync(path.join(root, '.claude', 'settings.json'), '{ not json'),
+      /settings\.json/],
+    ['CLAUDE.md deleted', (root) => fs.rmSync(path.join(root, 'CLAUDE.md')), /CLAUDE\.md/],
+  ];
+  for (const [name, breakIt, expected] of cases) {
+    const root = mkFakeHome();
+    const plan = UNINSTALL.planRemoval(root);
+    breakIt(root);                                     // plan 과 apply 사이에서 벌어진 일
+    const res = UNINSTALL.applyRemoval(plan, {
+      runner: null, scope: 'project', run: () => ({ code: 0 }),
+    });
+    assert.ok(res.failures.some((f) => expected.test(f)),
+      `${name}: the failure must be reported, got ${JSON.stringify(res.failures)}`);
+    assert.ok(!fs.existsSync(path.join(root, '.triple-crown')),
+      `${name}: a failed step must not stop the steps after it`);
+  }
+});
+
+test('an unwritable hook file is a reported failure with the recovery block intact', (t) => {
+  if (IS_ROOT) { t.skip(ROOT_SKIP); return; }
+  const root = mkFakeHome();
+  const from = mkBackup(root);
+  const hooksDir = path.join(root, '.claude', 'hooks');
+  fs.chmodSync(hooksDir, 0o555);                        // 삭제가 EACCES 로 죽는다
+  try {
+    const r = runCli(['uninstall-legacy', '--project', root, '--from', from, '--yes']);
+    assert.strictEqual(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stderr, /Recovery:/,
+      `an I/O failure must still print the way back:\n${r.stdout}\n${r.stderr}`);
+    assert.ok(r.stderr.includes(`restore --from ${from} --root ${root}`), r.stderr);
+    assert.ok(!fs.existsSync(path.join(root, '.triple-crown')),
+      'the steps after the failing one still run');
+  } finally {
+    fs.chmodSync(hooksDir, 0o755);                      // tempDir 정리가 지울 수 있게 되돌린다
+  }
+});
+
+// I3: 등록을 지우기 전에 훅 파일을 지우면, 그 사이의 settings.json 은 없는 파일을 가리키는
+// PreToolUse 훅을 들고 있다 — 사용자가 손볼 때까지 Bash 호출마다 훅 오류가 난다.
+test('the settings.json registration is removed before the file it points at', () => {
+  const res = UNINSTALL.applyRemoval(UNINSTALL.planRemoval(mkFakeHome()), {
+    runner: null, scope: 'project', run: () => ({ code: 0 }),
+  });
+  const reg = res.actions.findIndex((a) => a.includes('.claude/settings.json'));
+  const file = res.actions.findIndex((a) => a.includes('remove .claude/hooks/'));
+  assert.ok(reg !== -1 && file !== -1 && reg < file,
+    `unregister must precede delete:\n${res.actions.join('\n')}`);
+});
+
+test('a settings.json that cannot be edited leaves the hook file it registers in place', () => {
+  const root = mkFakeHome();
+  const plan = UNINSTALL.planRemoval(root);
+  fs.writeFileSync(path.join(root, '.claude', 'settings.json'), '{ not json');
+  const res = UNINSTALL.applyRemoval(plan, {
+    runner: null, scope: 'project', run: () => ({ code: 0 }),
+  });
+  assert.ok(fs.existsSync(path.join(root, '.claude', 'hooks', 'triple-crown-ship-guard.cjs')),
+    'never delete a file while a registration may still point at it');
+  assert.ok(res.failures.some((f) => f.includes('left in place')), res.failures.join('\n'));
+  assert.ok(!fs.existsSync(path.join(root, '.triple-crown')), 'the remaining steps still run');
+});

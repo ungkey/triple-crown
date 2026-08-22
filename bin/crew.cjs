@@ -740,6 +740,12 @@ async function uninstallLegacy(root,opts) {
   }
 
   const plans=scopes.map(s=>({...s,plan:planRemoval(s.root)}));
+  const backupCli=path.join(PACKAGE_ROOT,'scripts','legacy-backup.cjs');
+  // 복구 안내는 스코프마다 자기 루트를 들고 있어야 한다. `restore` 의 기본 대상은
+  // os.homedir() 인데 이 명령의 기본 스코프는 프로젝트이므로, --root 를 빼면 안내대로
+  // 따라간 사용자가 프로젝트의 설치본을 홈에 쏟는다(최종 리뷰 C1 의 실측).
+  const restoreCmd=s=>`node ${backupCli} restore --from ${s.from||'<that backup directory>'}`+
+    ` --root ${s.plan.root}`;
 
   // 판정 불가가 하나라도 있으면 파괴 경로에 들어가지 않는다. "모른다"를 "없다"로
   // 읽는 순간 조용한 누락이 된다. plan.count 는 판정된 대상만 센다 — undetermined 는
@@ -762,12 +768,16 @@ async function uninstallLegacy(root,opts) {
       const {plan,label}=s;
       if(!plan.count) continue;
       const res=checkBackup(plan,s.from);
+      s.createdAt=res.createdAt||null;
       if(!res.ok) {
         const flag=s.scope==='global' ? '--from-global' : '--from';
-        const backupCmd=`node ${path.join(PACKAGE_ROOT,'scripts','legacy-backup.cjs')} backup`+
+        const backupCmd=`node ${backupCli} backup`+
           (plan.root===os.homedir()?'':` --root ${plan.root}`);
         fail(`backup check failed for ${label}:\n`+
           res.problems.map(x=>`  - ${x}`).join('\n')+
+          // 읽히기는 한 백업이라면 언제 뜬 것인지 함께 말한다 — 거부의 절반은 "엉뚱한
+          // 백업을 골랐다"이고, 그 판단에 필요한 사실이 시각이다.
+          (res.createdAt?`\nThe backup at ${s.from} was taken ${res.createdAt}.`:'')+
           `\nTake one first:  ${backupCmd}\n`+
           `Then re-run with ${flag} <that directory>. Override with --skip-backup-check at your own risk.`,2);
       }
@@ -794,13 +804,25 @@ async function uninstallLegacy(root,opts) {
     // 남은 것만 마저 처리한다. 전부 되돌리고 싶다면 --from 으로 넘긴 백업이 있다.
     warn('Recovery: this command is idempotent — fix the cause above (e.g. make GSD reachable '+
       'again) and re-run it unchanged; it will only touch what is still left. To undo everything '+
-      `instead, restore from backup: node ${path.join(PACKAGE_ROOT,'scripts','legacy-backup.cjs')} `+
-      'restore --from <that directory>.');
+      'instead, restore from backup:');
+    for(const s of plans) {
+      if(!s.plan.count) continue;
+      warn(`  ${s.label}: ${restoreCmd(s)}`+(s.createdAt?`   (backup taken ${s.createdAt})`:''));
+    }
     fail(`legacy removal finished with ${failures.length} failure(s); see the warnings above.`,1);
   }
   log(opts.dryRun
     ? 'dry run complete — nothing was written.'
     : 'Legacy pre-rename installation removed.');
+  // 성공했을 때도 되돌리는 길을 남긴다. 이 명령은 되돌릴 수 없고, 이 출력이 나중에 다른
+  // 셸에서 복구를 시도할 때 남아 있는 유일한 단서일 수 있다 — 백업의 시각까지 함께 찍어
+  // 여러 세대 중 어느 것이 이 제거를 덮는지 헷갈리지 않게 한다.
+  if(!opts.dryRun) {
+    for(const s of plans) {
+      if(!s.plan.count||!s.from) continue;
+      log(`  undo ${s.label}: ${restoreCmd(s)}`+(s.createdAt?`   (backup taken ${s.createdAt})`:''));
+    }
+  }
 }
 function help() {
   log(`Crew Workflow Installer v${VERSION}
@@ -831,6 +853,7 @@ Legacy removal options:
   --from PATH          Backup covering the project-scope removal targets (required)
   --from-global PATH   Backup covering the home-scope removal targets (required with --global)
   --skip-backup-check  Remove without verifying the backups (dangerous)
+  (a tree with nothing to remove exits 0 without checking --from at all)
 
 Immediate local package usage:
   npx --yes --package ./crew-harness-0.6.5.tgz crew install --yes
